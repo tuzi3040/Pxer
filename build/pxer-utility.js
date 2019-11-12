@@ -1,10 +1,9 @@
 const Path =require('path');
 const Fs =require('fs');
-const Babel = require('babel-core');
 
 module.exports.pxerURL ='https://pxer-app.pea3nut.org/';
 module.exports.rootPath ='../';
-module.exports.pxerVersion ='7.0.11';
+module.exports.pxerVersion ='7.1.2';
 
 module.exports.path2URL =function(path){
     var url =module.exports.pxerURL;
@@ -24,7 +23,7 @@ module.exports.getAllFile =function(path){
     var fileName =null;
     while(fileName =stack.shift()){
         if(Fs.statSync(Path.join(path,fileName)).isDirectory()){
-            stack.push(...Fs.readdirSync(path+fileName).map(item=>Path.join(fileName,item)))
+            stack.push(...Fs.readdirSync(Path.join(path,fileName)).map(item=>Path.join(fileName,item)))
         }else{
             fileList.push(Path.join(path,fileName));
         };
@@ -87,6 +86,7 @@ module.exports.reader =function(tpl,data){
 };
 
 module.exports.babelCopy =function(origin,target){
+    const Babel = require('babel-core');
     Fs.writeFileSync(
         target,
         Babel.transformFileSync(origin ,{
@@ -98,6 +98,7 @@ module.exports.babelCopy =function(origin,target){
     );
 };
 module.exports.babelTransform =function(string){
+    const Babel = require('babel-core');
     if(Buffer.isBuffer(string)) string =string.toString();
     return Babel.transform(string ,{
         presets: [

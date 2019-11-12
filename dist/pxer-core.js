@@ -1,16 +1,12 @@
-'use strict';
-
-/**
- * Pxer任务队列中的任务对象
- * @constructor
- * @abstract
- * */
+"use strict";
 
 var _slicedToArray = function () { function sliceIterator(arr, i) { var _arr = []; var _n = true; var _d = false; var _e = undefined; try { for (var _i = arr[Symbol.iterator](), _s; !(_n = (_s = _i.next()).done); _n = true) { _arr.push(_s.value); if (i && _arr.length === i) break; } } catch (err) { _d = true; _e = err; } finally { try { if (!_n && _i["return"]) _i["return"](); } finally { if (_d) throw _e; } } return _arr; } return function (arr, i) { if (Array.isArray(arr)) { return arr; } else if (Symbol.iterator in Object(arr)) { return sliceIterator(arr, i); } else { throw new TypeError("Invalid attempt to destructure non-iterable instance"); } }; }();
 
 var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
 
 var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol" ? function (obj) { return typeof obj; } : function (obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; };
+
+function _asyncToGenerator(fn) { return function () { var gen = fn.apply(this, arguments); return new Promise(function (resolve, reject) { function step(key, arg) { try { var info = gen[key](arg); var value = info.value; } catch (error) { reject(error); return; } if (info.done) { resolve(value); } else { return Promise.resolve(value).then(function (value) { step("next", value); }, function (err) { step("throw", err); }); } } return step("next"); }); }; }
 
 function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr2 = Array(arr.length); i < arr.length; i++) { arr2[i] = arr[i]; } return arr2; } else { return Array.from(arr); } }
 
@@ -19,6 +15,704 @@ function _possibleConstructorReturn(self, call) { if (!self) { throw new Referen
 function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; }
 
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+/**
+ * Copyright (c) 2014-present, Facebook, Inc.
+ *
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+!function (global) {
+    "use strict";
+
+    var Op = Object.prototype;
+    var hasOwn = Op.hasOwnProperty;
+    var undefined; // More compressible than void 0.
+    var $Symbol = typeof Symbol === "function" ? Symbol : {};
+    var iteratorSymbol = $Symbol.iterator || "@@iterator";
+    var asyncIteratorSymbol = $Symbol.asyncIterator || "@@asyncIterator";
+    var toStringTagSymbol = $Symbol.toStringTag || "@@toStringTag";
+
+    var inModule = (typeof module === "undefined" ? "undefined" : _typeof(module)) === "object";
+    var runtime = global.regeneratorRuntime;
+    if (runtime) {
+        if (inModule) {
+            // If regeneratorRuntime is defined globally and we're in a module,
+            // make the exports object identical to regeneratorRuntime.
+            module.exports = runtime;
+        }
+        // Don't bother evaluating the rest of this file if the runtime was
+        // already defined globally.
+        return;
+    }
+
+    // Define the runtime globally (as expected by generated code) as either
+    // module.exports (if we're in a module) or a new, empty object.
+    runtime = global.regeneratorRuntime = inModule ? module.exports : {};
+
+    function wrap(innerFn, outerFn, self, tryLocsList) {
+        // If outerFn provided and outerFn.prototype is a Generator, then outerFn.prototype instanceof Generator.
+        var protoGenerator = outerFn && outerFn.prototype instanceof Generator ? outerFn : Generator;
+        var generator = Object.create(protoGenerator.prototype);
+        var context = new Context(tryLocsList || []);
+
+        // The ._invoke method unifies the implementations of the .next,
+        // .throw, and .return methods.
+        generator._invoke = makeInvokeMethod(innerFn, self, context);
+
+        return generator;
+    }
+    runtime.wrap = wrap;
+
+    // Try/catch helper to minimize deoptimizations. Returns a completion
+    // record like context.tryEntries[i].completion. This interface could
+    // have been (and was previously) designed to take a closure to be
+    // invoked without arguments, but in all the cases we care about we
+    // already have an existing method we want to call, so there's no need
+    // to create a new function object. We can even get away with assuming
+    // the method takes exactly one argument, since that happens to be true
+    // in every case, so we don't have to touch the arguments object. The
+    // only additional allocation required is the completion record, which
+    // has a stable shape and so hopefully should be cheap to allocate.
+    function tryCatch(fn, obj, arg) {
+        try {
+            return { type: "normal", arg: fn.call(obj, arg) };
+        } catch (err) {
+            return { type: "throw", arg: err };
+        }
+    }
+
+    var GenStateSuspendedStart = "suspendedStart";
+    var GenStateSuspendedYield = "suspendedYield";
+    var GenStateExecuting = "executing";
+    var GenStateCompleted = "completed";
+
+    // Returning this object from the innerFn has the same effect as
+    // breaking out of the dispatch switch statement.
+    var ContinueSentinel = {};
+
+    // Dummy constructor functions that we use as the .constructor and
+    // .constructor.prototype properties for functions that return Generator
+    // objects. For full spec compliance, you may wish to configure your
+    // minifier not to mangle the names of these two functions.
+    function Generator() {}
+    function GeneratorFunction() {}
+    function GeneratorFunctionPrototype() {}
+
+    // This is a polyfill for %IteratorPrototype% for environments that
+    // don't natively support it.
+    var IteratorPrototype = {};
+    IteratorPrototype[iteratorSymbol] = function () {
+        return this;
+    };
+
+    var getProto = Object.getPrototypeOf;
+    var NativeIteratorPrototype = getProto && getProto(getProto(values([])));
+    if (NativeIteratorPrototype && NativeIteratorPrototype !== Op && hasOwn.call(NativeIteratorPrototype, iteratorSymbol)) {
+        // This environment has a native %IteratorPrototype%; use it instead
+        // of the polyfill.
+        IteratorPrototype = NativeIteratorPrototype;
+    }
+
+    var Gp = GeneratorFunctionPrototype.prototype = Generator.prototype = Object.create(IteratorPrototype);
+    GeneratorFunction.prototype = Gp.constructor = GeneratorFunctionPrototype;
+    GeneratorFunctionPrototype.constructor = GeneratorFunction;
+    GeneratorFunctionPrototype[toStringTagSymbol] = GeneratorFunction.displayName = "GeneratorFunction";
+
+    // Helper for defining the .next, .throw, and .return methods of the
+    // Iterator interface in terms of a single ._invoke method.
+    function defineIteratorMethods(prototype) {
+        ["next", "throw", "return"].forEach(function (method) {
+            prototype[method] = function (arg) {
+                return this._invoke(method, arg);
+            };
+        });
+    }
+
+    runtime.isGeneratorFunction = function (genFun) {
+        var ctor = typeof genFun === "function" && genFun.constructor;
+        return ctor ? ctor === GeneratorFunction ||
+        // For the native GeneratorFunction constructor, the best we can
+        // do is to check its .name property.
+        (ctor.displayName || ctor.name) === "GeneratorFunction" : false;
+    };
+
+    runtime.mark = function (genFun) {
+        if (Object.setPrototypeOf) {
+            Object.setPrototypeOf(genFun, GeneratorFunctionPrototype);
+        } else {
+            genFun.__proto__ = GeneratorFunctionPrototype;
+            if (!(toStringTagSymbol in genFun)) {
+                genFun[toStringTagSymbol] = "GeneratorFunction";
+            }
+        }
+        genFun.prototype = Object.create(Gp);
+        return genFun;
+    };
+
+    // Within the body of any async function, `await x` is transformed to
+    // `yield regeneratorRuntime.awrap(x)`, so that the runtime can test
+    // `hasOwn.call(value, "__await")` to determine if the yielded value is
+    // meant to be awaited.
+    runtime.awrap = function (arg) {
+        return { __await: arg };
+    };
+
+    function AsyncIterator(generator) {
+        function invoke(method, arg, resolve, reject) {
+            var record = tryCatch(generator[method], generator, arg);
+            if (record.type === "throw") {
+                reject(record.arg);
+            } else {
+                var result = record.arg;
+                var value = result.value;
+                if (value && (typeof value === "undefined" ? "undefined" : _typeof(value)) === "object" && hasOwn.call(value, "__await")) {
+                    return Promise.resolve(value.__await).then(function (value) {
+                        invoke("next", value, resolve, reject);
+                    }, function (err) {
+                        invoke("throw", err, resolve, reject);
+                    });
+                }
+
+                return Promise.resolve(value).then(function (unwrapped) {
+                    // When a yielded Promise is resolved, its final value becomes
+                    // the .value of the Promise<{value,done}> result for the
+                    // current iteration.
+                    result.value = unwrapped;
+                    resolve(result);
+                }, function (error) {
+                    // If a rejected Promise was yielded, throw the rejection back
+                    // into the async generator function so it can be handled there.
+                    return invoke("throw", error, resolve, reject);
+                });
+            }
+        }
+
+        var previousPromise;
+
+        function enqueue(method, arg) {
+            function callInvokeWithMethodAndArg() {
+                return new Promise(function (resolve, reject) {
+                    invoke(method, arg, resolve, reject);
+                });
+            }
+
+            return previousPromise =
+            // If enqueue has been called before, then we want to wait until
+            // all previous Promises have been resolved before calling invoke,
+            // so that results are always delivered in the correct order. If
+            // enqueue has not been called before, then it is important to
+            // call invoke immediately, without waiting on a callback to fire,
+            // so that the async generator function has the opportunity to do
+            // any necessary setup in a predictable way. This predictability
+            // is why the Promise constructor synchronously invokes its
+            // executor callback, and why async functions synchronously
+            // execute code before the first await. Since we implement simple
+            // async functions in terms of async generators, it is especially
+            // important to get this right, even though it requires care.
+            previousPromise ? previousPromise.then(callInvokeWithMethodAndArg,
+            // Avoid propagating failures to Promises returned by later
+            // invocations of the iterator.
+            callInvokeWithMethodAndArg) : callInvokeWithMethodAndArg();
+        }
+
+        // Define the unified helper method that is used to implement .next,
+        // .throw, and .return (see defineIteratorMethods).
+        this._invoke = enqueue;
+    }
+
+    defineIteratorMethods(AsyncIterator.prototype);
+    AsyncIterator.prototype[asyncIteratorSymbol] = function () {
+        return this;
+    };
+    runtime.AsyncIterator = AsyncIterator;
+
+    // Note that simple async functions are implemented on top of
+    // AsyncIterator objects; they just return a Promise for the value of
+    // the final result produced by the iterator.
+    runtime.async = function (innerFn, outerFn, self, tryLocsList) {
+        var iter = new AsyncIterator(wrap(innerFn, outerFn, self, tryLocsList));
+
+        return runtime.isGeneratorFunction(outerFn) ? iter // If outerFn is a generator, return the full iterator.
+        : iter.next().then(function (result) {
+            return result.done ? result.value : iter.next();
+        });
+    };
+
+    function makeInvokeMethod(innerFn, self, context) {
+        var state = GenStateSuspendedStart;
+
+        return function invoke(method, arg) {
+            if (state === GenStateExecuting) {
+                throw new Error("Generator is already running");
+            }
+
+            if (state === GenStateCompleted) {
+                if (method === "throw") {
+                    throw arg;
+                }
+
+                // Be forgiving, per 25.3.3.3.3 of the spec:
+                // https://people.mozilla.org/~jorendorff/es6-draft.html#sec-generatorresume
+                return doneResult();
+            }
+
+            context.method = method;
+            context.arg = arg;
+
+            while (true) {
+                var delegate = context.delegate;
+                if (delegate) {
+                    var delegateResult = maybeInvokeDelegate(delegate, context);
+                    if (delegateResult) {
+                        if (delegateResult === ContinueSentinel) continue;
+                        return delegateResult;
+                    }
+                }
+
+                if (context.method === "next") {
+                    // Setting context._sent for legacy support of Babel's
+                    // function.sent implementation.
+                    context.sent = context._sent = context.arg;
+                } else if (context.method === "throw") {
+                    if (state === GenStateSuspendedStart) {
+                        state = GenStateCompleted;
+                        throw context.arg;
+                    }
+
+                    context.dispatchException(context.arg);
+                } else if (context.method === "return") {
+                    context.abrupt("return", context.arg);
+                }
+
+                state = GenStateExecuting;
+
+                var record = tryCatch(innerFn, self, context);
+                if (record.type === "normal") {
+                    // If an exception is thrown from innerFn, we leave state ===
+                    // GenStateExecuting and loop back for another invocation.
+                    state = context.done ? GenStateCompleted : GenStateSuspendedYield;
+
+                    if (record.arg === ContinueSentinel) {
+                        continue;
+                    }
+
+                    return {
+                        value: record.arg,
+                        done: context.done
+                    };
+                } else if (record.type === "throw") {
+                    state = GenStateCompleted;
+                    // Dispatch the exception by looping back around to the
+                    // context.dispatchException(context.arg) call above.
+                    context.method = "throw";
+                    context.arg = record.arg;
+                }
+            }
+        };
+    }
+
+    // Call delegate.iterator[context.method](context.arg) and handle the
+    // result, either by returning a { value, done } result from the
+    // delegate iterator, or by modifying context.method and context.arg,
+    // setting context.delegate to null, and returning the ContinueSentinel.
+    function maybeInvokeDelegate(delegate, context) {
+        var method = delegate.iterator[context.method];
+        if (method === undefined) {
+            // A .throw or .return when the delegate iterator has no .throw
+            // method always terminates the yield* loop.
+            context.delegate = null;
+
+            if (context.method === "throw") {
+                if (delegate.iterator.return) {
+                    // If the delegate iterator has a return method, give it a
+                    // chance to clean up.
+                    context.method = "return";
+                    context.arg = undefined;
+                    maybeInvokeDelegate(delegate, context);
+
+                    if (context.method === "throw") {
+                        // If maybeInvokeDelegate(context) changed context.method from
+                        // "return" to "throw", let that override the TypeError below.
+                        return ContinueSentinel;
+                    }
+                }
+
+                context.method = "throw";
+                context.arg = new TypeError("The iterator does not provide a 'throw' method");
+            }
+
+            return ContinueSentinel;
+        }
+
+        var record = tryCatch(method, delegate.iterator, context.arg);
+
+        if (record.type === "throw") {
+            context.method = "throw";
+            context.arg = record.arg;
+            context.delegate = null;
+            return ContinueSentinel;
+        }
+
+        var info = record.arg;
+
+        if (!info) {
+            context.method = "throw";
+            context.arg = new TypeError("iterator result is not an object");
+            context.delegate = null;
+            return ContinueSentinel;
+        }
+
+        if (info.done) {
+            // Assign the result of the finished delegate to the temporary
+            // variable specified by delegate.resultName (see delegateYield).
+            context[delegate.resultName] = info.value;
+
+            // Resume execution at the desired location (see delegateYield).
+            context.next = delegate.nextLoc;
+
+            // If context.method was "throw" but the delegate handled the
+            // exception, let the outer generator proceed normally. If
+            // context.method was "next", forget context.arg since it has been
+            // "consumed" by the delegate iterator. If context.method was
+            // "return", allow the original .return call to continue in the
+            // outer generator.
+            if (context.method !== "return") {
+                context.method = "next";
+                context.arg = undefined;
+            }
+        } else {
+            // Re-yield the result returned by the delegate method.
+            return info;
+        }
+
+        // The delegate iterator is finished, so forget it and continue with
+        // the outer generator.
+        context.delegate = null;
+        return ContinueSentinel;
+    }
+
+    // Define Generator.prototype.{next,throw,return} in terms of the
+    // unified ._invoke helper method.
+    defineIteratorMethods(Gp);
+
+    Gp[toStringTagSymbol] = "Generator";
+
+    // A Generator should always return itself as the iterator object when the
+    // @@iterator function is called on it. Some browsers' implementations of the
+    // iterator prototype chain incorrectly implement this, causing the Generator
+    // object to not be returned from this call. This ensures that doesn't happen.
+    // See https://github.com/facebook/regenerator/issues/274 for more details.
+    Gp[iteratorSymbol] = function () {
+        return this;
+    };
+
+    Gp.toString = function () {
+        return "[object Generator]";
+    };
+
+    function pushTryEntry(locs) {
+        var entry = { tryLoc: locs[0] };
+
+        if (1 in locs) {
+            entry.catchLoc = locs[1];
+        }
+
+        if (2 in locs) {
+            entry.finallyLoc = locs[2];
+            entry.afterLoc = locs[3];
+        }
+
+        this.tryEntries.push(entry);
+    }
+
+    function resetTryEntry(entry) {
+        var record = entry.completion || {};
+        record.type = "normal";
+        delete record.arg;
+        entry.completion = record;
+    }
+
+    function Context(tryLocsList) {
+        // The root entry object (effectively a try statement without a catch
+        // or a finally block) gives us a place to store values thrown from
+        // locations where there is no enclosing try statement.
+        this.tryEntries = [{ tryLoc: "root" }];
+        tryLocsList.forEach(pushTryEntry, this);
+        this.reset(true);
+    }
+
+    runtime.keys = function (object) {
+        var keys = [];
+        for (var key in object) {
+            keys.push(key);
+        }
+        keys.reverse();
+
+        // Rather than returning an object with a next method, we keep
+        // things simple and return the next function itself.
+        return function next() {
+            while (keys.length) {
+                var key = keys.pop();
+                if (key in object) {
+                    next.value = key;
+                    next.done = false;
+                    return next;
+                }
+            }
+
+            // To avoid creating an additional object, we just hang the .value
+            // and .done properties off the next function object itself. This
+            // also ensures that the minifier will not anonymize the function.
+            next.done = true;
+            return next;
+        };
+    };
+
+    function values(iterable) {
+        if (iterable) {
+            var iteratorMethod = iterable[iteratorSymbol];
+            if (iteratorMethod) {
+                return iteratorMethod.call(iterable);
+            }
+
+            if (typeof iterable.next === "function") {
+                return iterable;
+            }
+
+            if (!isNaN(iterable.length)) {
+                var i = -1,
+                    next = function next() {
+                    while (++i < iterable.length) {
+                        if (hasOwn.call(iterable, i)) {
+                            next.value = iterable[i];
+                            next.done = false;
+                            return next;
+                        }
+                    }
+
+                    next.value = undefined;
+                    next.done = true;
+
+                    return next;
+                };
+
+                return next.next = next;
+            }
+        }
+
+        // Return an iterator with no values.
+        return { next: doneResult };
+    }
+    runtime.values = values;
+
+    function doneResult() {
+        return { value: undefined, done: true };
+    }
+
+    Context.prototype = {
+        constructor: Context,
+
+        reset: function reset(skipTempReset) {
+            this.prev = 0;
+            this.next = 0;
+            // Resetting context._sent for legacy support of Babel's
+            // function.sent implementation.
+            this.sent = this._sent = undefined;
+            this.done = false;
+            this.delegate = null;
+
+            this.method = "next";
+            this.arg = undefined;
+
+            this.tryEntries.forEach(resetTryEntry);
+
+            if (!skipTempReset) {
+                for (var name in this) {
+                    // Not sure about the optimal order of these conditions:
+                    if (name.charAt(0) === "t" && hasOwn.call(this, name) && !isNaN(+name.slice(1))) {
+                        this[name] = undefined;
+                    }
+                }
+            }
+        },
+
+        stop: function stop() {
+            this.done = true;
+
+            var rootEntry = this.tryEntries[0];
+            var rootRecord = rootEntry.completion;
+            if (rootRecord.type === "throw") {
+                throw rootRecord.arg;
+            }
+
+            return this.rval;
+        },
+
+        dispatchException: function dispatchException(exception) {
+            if (this.done) {
+                throw exception;
+            }
+
+            var context = this;
+            function handle(loc, caught) {
+                record.type = "throw";
+                record.arg = exception;
+                context.next = loc;
+
+                if (caught) {
+                    // If the dispatched exception was caught by a catch block,
+                    // then let that catch block handle the exception normally.
+                    context.method = "next";
+                    context.arg = undefined;
+                }
+
+                return !!caught;
+            }
+
+            for (var i = this.tryEntries.length - 1; i >= 0; --i) {
+                var entry = this.tryEntries[i];
+                var record = entry.completion;
+
+                if (entry.tryLoc === "root") {
+                    // Exception thrown outside of any try block that could handle
+                    // it, so set the completion value of the entire function to
+                    // throw the exception.
+                    return handle("end");
+                }
+
+                if (entry.tryLoc <= this.prev) {
+                    var hasCatch = hasOwn.call(entry, "catchLoc");
+                    var hasFinally = hasOwn.call(entry, "finallyLoc");
+
+                    if (hasCatch && hasFinally) {
+                        if (this.prev < entry.catchLoc) {
+                            return handle(entry.catchLoc, true);
+                        } else if (this.prev < entry.finallyLoc) {
+                            return handle(entry.finallyLoc);
+                        }
+                    } else if (hasCatch) {
+                        if (this.prev < entry.catchLoc) {
+                            return handle(entry.catchLoc, true);
+                        }
+                    } else if (hasFinally) {
+                        if (this.prev < entry.finallyLoc) {
+                            return handle(entry.finallyLoc);
+                        }
+                    } else {
+                        throw new Error("try statement without catch or finally");
+                    }
+                }
+            }
+        },
+
+        abrupt: function abrupt(type, arg) {
+            for (var i = this.tryEntries.length - 1; i >= 0; --i) {
+                var entry = this.tryEntries[i];
+                if (entry.tryLoc <= this.prev && hasOwn.call(entry, "finallyLoc") && this.prev < entry.finallyLoc) {
+                    var finallyEntry = entry;
+                    break;
+                }
+            }
+
+            if (finallyEntry && (type === "break" || type === "continue") && finallyEntry.tryLoc <= arg && arg <= finallyEntry.finallyLoc) {
+                // Ignore the finally entry if control is not jumping to a
+                // location outside the try/catch block.
+                finallyEntry = null;
+            }
+
+            var record = finallyEntry ? finallyEntry.completion : {};
+            record.type = type;
+            record.arg = arg;
+
+            if (finallyEntry) {
+                this.method = "next";
+                this.next = finallyEntry.finallyLoc;
+                return ContinueSentinel;
+            }
+
+            return this.complete(record);
+        },
+
+        complete: function complete(record, afterLoc) {
+            if (record.type === "throw") {
+                throw record.arg;
+            }
+
+            if (record.type === "break" || record.type === "continue") {
+                this.next = record.arg;
+            } else if (record.type === "return") {
+                this.rval = this.arg = record.arg;
+                this.method = "return";
+                this.next = "end";
+            } else if (record.type === "normal" && afterLoc) {
+                this.next = afterLoc;
+            }
+
+            return ContinueSentinel;
+        },
+
+        finish: function finish(finallyLoc) {
+            for (var i = this.tryEntries.length - 1; i >= 0; --i) {
+                var entry = this.tryEntries[i];
+                if (entry.finallyLoc === finallyLoc) {
+                    this.complete(entry.completion, entry.afterLoc);
+                    resetTryEntry(entry);
+                    return ContinueSentinel;
+                }
+            }
+        },
+
+        "catch": function _catch(tryLoc) {
+            for (var i = this.tryEntries.length - 1; i >= 0; --i) {
+                var entry = this.tryEntries[i];
+                if (entry.tryLoc === tryLoc) {
+                    var record = entry.completion;
+                    if (record.type === "throw") {
+                        var thrown = record.arg;
+                        resetTryEntry(entry);
+                    }
+                    return thrown;
+                }
+            }
+
+            // The context.catch method must only be called with a location
+            // argument that corresponds to a known catch block.
+            throw new Error("illegal catch attempt");
+        },
+
+        delegateYield: function delegateYield(iterable, resultName, nextLoc) {
+            this.delegate = {
+                iterator: values(iterable),
+                resultName: resultName,
+                nextLoc: nextLoc
+            };
+
+            if (this.method === "next") {
+                // Deliberately forget the last sent value so that we don't
+                // accidentally pass it on to the delegate.
+                this.arg = undefined;
+            }
+
+            return ContinueSentinel;
+        }
+    };
+}(
+// In sloppy mode, unbound `this` refers to the global object, fallback to
+// Function constructor if we're in global strict mode. That is sadly a form
+// of indirect eval which violates Content Security Policy.
+function () {
+    return this || (typeof self === "undefined" ? "undefined" : _typeof(self)) === "object" && self;
+}() || Function("return this")());
+
+'use strict';
+
+/**
+ * Pxer任务队列中的任务对象
+ * @constructor
+ * @abstract
+ * */
 
 var PxerRequest = function PxerRequest() {
     var _ref = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {},
@@ -44,8 +738,6 @@ var PxerPageRequest = function (_PxerRequest) {
     function PxerPageRequest() {
         var _ref2;
 
-        var _ret;
-
         _classCallCheck(this, PxerPageRequest);
 
         for (var _len = arguments.length, argn = Array(_len), _key = 0; _key < _len; _key++) {
@@ -54,7 +746,8 @@ var PxerPageRequest = function (_PxerRequest) {
 
         var _this = _possibleConstructorReturn(this, (_ref2 = PxerPageRequest.__proto__ || Object.getPrototypeOf(PxerPageRequest)).call.apply(_ref2, [this].concat(argn)));
 
-        return _ret = denyNewAttr(_this), _possibleConstructorReturn(_this, _ret);
+        _this.type = argn[0].type;
+        return _this;
     }
 
     return PxerPageRequest;
@@ -70,8 +763,6 @@ var PxerWorksRequest = function (_PxerRequest2) {
     _inherits(PxerWorksRequest, _PxerRequest2);
 
     function PxerWorksRequest() {
-        var _ret2;
-
         var _ref3 = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {},
             _ref3$url = _ref3.url,
             url = _ref3$url === undefined ? [] : _ref3$url,
@@ -88,7 +779,7 @@ var PxerWorksRequest = function (_PxerRequest2) {
         _this2.type = type; //[manga|ugoira|illust]
         _this2.isMultiple = isMultiple; //[true|false]
         _this2.id = id;
-        return _ret2 = denyNewAttr(_this2), _possibleConstructorReturn(_this2, _ret2);
+        return _this2;
     }
 
     return PxerWorksRequest;
@@ -112,7 +803,6 @@ var PxerFailInfo = function PxerFailInfo() {
     this.url = url;
     this.type = type;
     this.task = task;
-    return denyNewAttr(this);
 };
 
 /**
@@ -157,8 +847,6 @@ var PxerWorks = function PxerWorks() {
     this.ratedCount = ratedCount;
     /**作品的图片文件扩展名*/
     this.fileFormat = fileFormat;
-
-    if (strict) return denyNewAttr(this);
 };
 /**
  * 抓取到的多张插画/漫画作品对象
@@ -171,8 +859,6 @@ var PxerMultipleWorks = function (_PxerWorks) {
     _inherits(PxerMultipleWorks, _PxerWorks);
 
     function PxerMultipleWorks() {
-        var _ret3;
-
         var data = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {};
 
         _classCallCheck(this, PxerMultipleWorks);
@@ -181,7 +867,7 @@ var PxerMultipleWorks = function (_PxerWorks) {
         var _this3 = _possibleConstructorReturn(this, (PxerMultipleWorks.__proto__ || Object.getPrototypeOf(PxerMultipleWorks)).call(this, data, false));
 
         _this3.multiple = data.multiple;
-        return _ret3 = denyNewAttr(_this3), _possibleConstructorReturn(_this3, _ret3);
+        return _this3;
     }
 
     return PxerMultipleWorks;
@@ -198,8 +884,6 @@ var PxerUgoiraWorks = function (_PxerWorks2) {
     _inherits(PxerUgoiraWorks, _PxerWorks2);
 
     function PxerUgoiraWorks() {
-        var _ret4;
-
         var data = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {};
 
         _classCallCheck(this, PxerUgoiraWorks);
@@ -209,37 +893,13 @@ var PxerUgoiraWorks = function (_PxerWorks2) {
         _this4.fileFormat = 'zip';
         /**动图动画参数*/
         _this4.frames = data.frames;
-        return _ret4 = denyNewAttr(_this4), _possibleConstructorReturn(_this4, _ret4);
+        return _this4;
     }
 
     return PxerUgoiraWorks;
 }(PxerWorks);
 
 ;
-
-/**
- * 对对象进行代理，拒绝新key赋值并抛出错误
- * @param {Object} obj - 要代理的对象
- * @return {Proxy}
- * */
-function denyNewAttr(obj) {
-    if (typeof Proxy === 'undefined') return obj;
-    return new Proxy(obj, {
-        get: function get(obj, prop) {
-            if (!(prop in obj) && (typeof prop === 'undefined' ? 'undefined' : _typeof(prop)) !== 'symbol' && !/^\_|to[A-Z]/.test(prop)) {
-                console.warn('attribute "' + prop + '" is not in ' + obj.constructor.name);
-            }
-            return obj[prop];
-        },
-        set: function set(obj, prop, value) {
-            if (!(prop in obj)) {
-                throw new Error('Count not set attribute "' + prop + '" in ' + obj.constructor.name);
-            };
-            obj[prop] = value;
-            return true;
-        }
-    });
-}
 
 'use strict';
 
@@ -269,7 +929,7 @@ var PxerEvent = function () {
     }
 
     _createClass(PxerEvent, [{
-        key: 'on',
+        key: "on",
         value: function on(type, listener) {
             if (!PxerEvent.check(this, type, listener)) return false;
             if (!this._pe_event[type]) this._pe_event[type] = [];
@@ -277,7 +937,7 @@ var PxerEvent = function () {
             return true;
         }
     }, {
-        key: 'one',
+        key: "one",
         value: function one(type, listener) {
             if (!PxerEvent.check(this, type, listener)) return false;
             if (!this._pe_oneEvent[type]) this._pe_oneEvent[type] = [];
@@ -285,7 +945,7 @@ var PxerEvent = function () {
             return true;
         }
     }, {
-        key: 'dispatch',
+        key: "dispatch",
         value: function dispatch(type) {
             for (var _len2 = arguments.length, data = Array(_len2 > 1 ? _len2 - 1 : 0), _key2 = 1; _key2 < _len2; _key2++) {
                 data[_key2 - 1] = arguments[_key2];
@@ -313,7 +973,7 @@ var PxerEvent = function () {
             return true;
         }
     }, {
-        key: 'off',
+        key: "off",
         value: function off(eventType, listener) {
             if (!PxerEvent.checkEvent(this, eventType)) return false;
             if (listener && !PxerEvent.checkListener(listener)) return false;
@@ -354,14 +1014,14 @@ PxerEvent.check = function (pe, eventType, listener) {
 };
 PxerEvent.checkEvent = function (pe, eventType) {
     if (eventType !== '*' && pe._pe_eventList.indexOf(eventType) === -1) {
-        console.warn('PxerEvent : "' + eventType + '" is not in eventList[' + pe._pe_eventList + ']');
+        console.warn("PxerEvent : \"" + eventType + "\" is not in eventList[" + pe._pe_eventList + "]");
         return false;
     };
     return true;
 };
 PxerEvent.checkListener = function (listener) {
     if (!(listener instanceof Function || listener === true || listener === '*')) {
-        console.warn('PxerEvent: "' + listener + '" is not a function');
+        console.warn("PxerEvent: \"" + listener + "\" is not a function");
         return false;
     };
     return true;
@@ -393,7 +1053,7 @@ var PxerFilter = function () {
     }
 
     _createClass(PxerFilter, [{
-        key: 'filter',
+        key: "filter",
 
 
         /**
@@ -530,96 +1190,267 @@ PxerHtmlParser.parsePage = function (task) {
         return false;
     }
 
-    var URLData = parseURL(task.url);
-    var dom = PxerHtmlParser.HTMLParser(task.html);
+    var parseList = function parseList(elt) {
+        return JSON.parse(elt.getAttribute('data-items')).filter(function (i) {
+            return !i.isAdContainer;
+        }) // skip AD
+        ;
+    };
 
-    // old method
     var taskList = [];
+    switch (task.type) {
+        case "userprofile_manga":
+        case "userprofile_illust":
+        case "userprofile_all":
+            var response = JSON.parse(task.html).body;
+            if (task.type !== "userprofile_illust") {
+                for (var elt in response.manga) {
+                    var _tsk = new PxerWorksRequest({
+                        html: {},
+                        type: null,
+                        isMultiple: null,
+                        id: elt
+                    });
+                    _tsk.url = PxerHtmlParser.getUrlList(_tsk);
+                    taskList.push(_tsk);
+                }
+            }
 
-    var searchResult = dom.body.querySelector("input#js-mount-point-search-result-list");
-    var elts = null;
-    if (searchResult) {
-        var searchData = JSON.parse(searchResult.getAttribute('data-items'));
-        var _iteratorNormalCompletion = true;
-        var _didIteratorError = false;
-        var _iteratorError = undefined;
+            if (task.type !== "userprofile_manga") {
+                for (var _elt in response.illusts) {
+                    var tsk = new PxerWorksRequest({
+                        html: {},
+                        type: null,
+                        isMultiple: null,
+                        id: _elt
+                    });
+                    tsk.url = PxerHtmlParser.getUrlList(tsk);
+                    taskList.push(tsk);
+                }
+            }
+            break;
 
-        try {
-            for (var _iterator = searchData[Symbol.iterator](), _step; !(_iteratorNormalCompletion = (_step = _iterator.next()).done); _iteratorNormalCompletion = true) {
-                var searchItem = _step.value;
-
-                var task = new PxerWorksRequest({
+        case "bookmark_works":
+            var response = JSON.parse(task.html).body;
+            for (var worki in response.works) {
+                var work = response.works[worki];
+                var _tsk2 = new PxerWorksRequest({
                     html: {},
-                    type: searchItem.illustType == 2 ? 'ugoira' : searchItem.illustType == 1 ? 'manga' : 'illust',
-
-                    isMultiple: searchItem.pageCount > 1,
-                    id: searchItem.illustId
+                    type: this.parseIllustType(work.illustType),
+                    isMultiple: work.pageCount > 1,
+                    id: work.id
                 });
-                task.url = PxerHtmlParser.getUrlList(task);
-
-                taskList.push(task);
+                _tsk2.url = PxerHtmlParser.getUrlList(_tsk2);
+                taskList.push(_tsk2);
             }
-        } catch (err) {
-            _didIteratorError = true;
-            _iteratorError = err;
-        } finally {
+            break;
+        case "member_works":
+            var dom = PxerHtmlParser.HTMLParser(task.html);
+            var elts = dom.body.querySelectorAll('a.work._work');
+            var _iteratorNormalCompletion = true;
+            var _didIteratorError = false;
+            var _iteratorError = undefined;
+
             try {
-                if (!_iteratorNormalCompletion && _iterator.return) {
-                    _iterator.return();
+                for (var _iterator = elts[Symbol.iterator](), _step; !(_iteratorNormalCompletion = (_step = _iterator.next()).done); _iteratorNormalCompletion = true) {
+                    var _elt2 = _step.value;
+
+                    var task = new PxerWorksRequest({
+                        html: {},
+                        type: function (elt) {
+                            switch (true) {
+                                case elt.matches('.ugoku-illust'):
+                                    return "ugoira";
+                                case elt.matches('.manga'):
+                                    return "manga";
+                                default:
+                                    return "illust";
+                            }
+                        }(_elt2),
+                        isMultiple: _elt2.matches(".multiple"),
+                        id: _elt2.getAttribute('href').match(/illust_id=(\d+)/)[1]
+                    });
+
+                    task.url = PxerHtmlParser.getUrlList(task);
+
+                    taskList.push(task);
                 }
+            } catch (err) {
+                _didIteratorError = true;
+                _iteratorError = err;
             } finally {
-                if (_didIteratorError) {
-                    throw _iteratorError;
+                try {
+                    if (!_iteratorNormalCompletion && _iterator.return) {
+                        _iterator.return();
+                    }
+                } finally {
+                    if (_didIteratorError) {
+                        throw _iteratorError;
+                    }
                 }
             }
-        }
 
-        ;
-    } else {
-        elts = dom.body.querySelectorAll('a.work._work');
+            ;
+            break;
+        case "rank":
+            var data = JSON.parse(task.html);
+            var _iteratorNormalCompletion2 = true;
+            var _didIteratorError2 = false;
+            var _iteratorError2 = undefined;
 
-        var _iteratorNormalCompletion2 = true;
-        var _didIteratorError2 = false;
-        var _iteratorError2 = undefined;
-
-        try {
-            for (var _iterator2 = elts[Symbol.iterator](), _step2; !(_iteratorNormalCompletion2 = (_step2 = _iterator2.next()).done); _iteratorNormalCompletion2 = true) {
-                var elt = _step2.value;
-
-                var task = new PxerWorksRequest({
-                    html: {},
-                    type: elt.matches('.ugoku-illust') ? 'ugoira' : elt.matches(".manga") ? 'manga' : "illust",
-
-                    isMultiple: elt.matches(".multiple"),
-                    id: elt.getAttribute('href').match(/illust_id=(\d+)/)[1]
-                });
-
-                task.url = PxerHtmlParser.getUrlList(task);
-
-                taskList.push(task);
-            }
-        } catch (err) {
-            _didIteratorError2 = true;
-            _iteratorError2 = err;
-        } finally {
             try {
-                if (!_iteratorNormalCompletion2 && _iterator2.return) {
-                    _iterator2.return();
+                for (var _iterator2 = data['contents'][Symbol.iterator](), _step2; !(_iteratorNormalCompletion2 = (_step2 = _iterator2.next()).done); _iteratorNormalCompletion2 = true) {
+                    var task = _step2.value;
+
+
+                    var task = new PxerWorksRequest({
+                        html: {},
+                        type: this.parseIllustType(task['illust_type']),
+                        isMultiple: task['illust_page_count'] > 1,
+                        id: task['illust_id'].toString()
+                    });
+                    task.url = PxerHtmlParser.getUrlList(task);
+
+                    taskList.push(task);
                 }
+            } catch (err) {
+                _didIteratorError2 = true;
+                _iteratorError2 = err;
             } finally {
-                if (_didIteratorError2) {
-                    throw _iteratorError2;
+                try {
+                    if (!_iteratorNormalCompletion2 && _iterator2.return) {
+                        _iterator2.return();
+                    }
+                } finally {
+                    if (_didIteratorError2) {
+                        throw _iteratorError2;
+                    }
                 }
             }
-        }
 
-        ;
-    }
+            ;
+            break;
+        case "discovery":
+            var data = JSON.parse(task.html);
+            var _iteratorNormalCompletion3 = true;
+            var _didIteratorError3 = false;
+            var _iteratorError3 = undefined;
 
-    if (elts !== null && elts.length === 0 && !searchResult) {
+            try {
+                for (var _iterator3 = data.recommendations[Symbol.iterator](), _step3; !(_iteratorNormalCompletion3 = (_step3 = _iterator3.next()).done); _iteratorNormalCompletion3 = true) {
+                    var id = _step3.value;
+
+                    var task = new PxerWorksRequest({
+                        html: {},
+                        type: null,
+                        isMultiple: null,
+                        id: id.toString()
+                    });
+                    task.url = PxerHtmlParser.getUrlList(task);
+
+                    taskList.push(task);
+                }
+            } catch (err) {
+                _didIteratorError3 = true;
+                _iteratorError3 = err;
+            } finally {
+                try {
+                    if (!_iteratorNormalCompletion3 && _iterator3.return) {
+                        _iterator3.return();
+                    }
+                } finally {
+                    if (_didIteratorError3) {
+                        throw _iteratorError3;
+                    }
+                }
+            }
+
+            ;
+            break;
+        case "search":
+            var dom = PxerHtmlParser.HTMLParser(task.html);
+            var searchData = parseList(dom.body.querySelector("input#js-mount-point-search-result-list"));
+            var _iteratorNormalCompletion4 = true;
+            var _didIteratorError4 = false;
+            var _iteratorError4 = undefined;
+
+            try {
+                for (var _iterator4 = searchData[Symbol.iterator](), _step4; !(_iteratorNormalCompletion4 = (_step4 = _iterator4.next()).done); _iteratorNormalCompletion4 = true) {
+                    var searchItem = _step4.value;
+
+                    var task = new PxerWorksRequest({
+                        html: {},
+                        type: this.parseIllustType(searchItem.illustType),
+                        isMultiple: searchItem.pageCount > 1,
+                        id: searchItem.illustId
+                    });
+                    task.url = PxerHtmlParser.getUrlList(task);
+                    taskList.push(task);
+                }
+            } catch (err) {
+                _didIteratorError4 = true;
+                _iteratorError4 = err;
+            } finally {
+                try {
+                    if (!_iteratorNormalCompletion4 && _iterator4.return) {
+                        _iterator4.return();
+                    }
+                } finally {
+                    if (_didIteratorError4) {
+                        throw _iteratorError4;
+                    }
+                }
+            }
+
+            ;
+            break;
+        case "bookmark_new":
+            var dom = PxerHtmlParser.HTMLParser(task.html);
+            var data = parseList(dom.body.querySelector("div#js-mount-point-latest-following"));
+            var _iteratorNormalCompletion5 = true;
+            var _didIteratorError5 = false;
+            var _iteratorError5 = undefined;
+
+            try {
+                for (var _iterator5 = data[Symbol.iterator](), _step5; !(_iteratorNormalCompletion5 = (_step5 = _iterator5.next()).done); _iteratorNormalCompletion5 = true) {
+                    var task = _step5.value;
+
+
+                    var task = new PxerWorksRequest({
+                        html: {},
+                        type: this.parseIllustType(task.illustType),
+                        isMultiple: task.pageCount > 1,
+                        id: task.illustId.toString()
+                    });
+                    task.url = PxerHtmlParser.getUrlList(task);
+
+                    taskList.push(task);
+                }
+            } catch (err) {
+                _didIteratorError5 = true;
+                _iteratorError5 = err;
+            } finally {
+                try {
+                    if (!_iteratorNormalCompletion5 && _iterator5.return) {
+                        _iterator5.return();
+                    }
+                } finally {
+                    if (_didIteratorError5) {
+                        throw _iteratorError5;
+                    }
+                }
+            }
+
+            ;
+            break;
+        default:
+            throw new Error("Unknown PageWorks type " + task.type);
+    };
+
+    if (taskList.length < 1) {
         window['PXER_ERROR'] = 'PxerHtmlParser.parsePage: result empty';
         return false;
-    }
+    };
 
     return taskList;
 };
@@ -636,44 +1467,30 @@ PxerHtmlParser.parseWorks = function (task) {
     }
     if (!task.url.every(function (item) {
         return task.html[item];
-    }) || !task.type) {
-        window['PXER_ERROR'] = 'PxerHtmlParser.parsePage: task illegal';
+    })) {
+        window['PXER_ERROR'] = 'PxerHtmlParser.parseWorks: task illegal';
         return false;
     }
-
-    var pw;
-    if (task.type === 'ugoira') {
-        pw = new PxerUgoiraWorks();
-    } else if (task.isMultiple) {
-        pw = new PxerMultipleWorks();
-    } else {
-        pw = new PxerWorks();
-    };
 
     for (var url in task.html) {
         var data = {
             dom: PxerHtmlParser.HTMLParser(task.html[url]),
-            url: url, pw: pw, task: task
+            task: task
         };
         try {
             switch (true) {
                 case url.indexOf('mode=medium') !== -1:
-                    PxerHtmlParser.parseMediumHtml(data);
-                    break;
-                case url.indexOf('mode=manga') !== -1:
-                    PxerHtmlParser.parseMangaHtml(data);
+                    var pw = PxerHtmlParser.parseMediumHtml(data);
                     break;
                 default:
-                    return false;
-                    window['PXER_ERROR'] = 'PxerHtmlParser.parsePage: count not parse task url "' + url + '"';
+                    throw new Error("PxerHtmlParser.parsePage: count not parse task url \"" + url + "\"");
             };
         } catch (e) {
-            window['PXER_ERROR'] = task.id + ':' + e.message;
+            window['PXER_ERROR'] = task.id + ":" + e.message;
             if (window['PXER_MODE'] === 'dev') console.error(task, e);
             return false;
         }
     };
-
     return pw;
 };
 
@@ -686,29 +1503,28 @@ PxerHtmlParser.getUrlList = function (task) {
     return ["https://www.pixiv.net/member_illust.php?mode=medium&illust_id=" + task.id];
 };
 
-PxerHtmlParser.parseMangaHtml = function (_ref8) {
+PxerHtmlParser.parseMediumHtml = function (_ref8) {
     var task = _ref8.task,
-        dom = _ref8.dom,
-        url = _ref8.url,
-        pw = _ref8.pw;
-
-    pw.multiple = +dom.body.querySelector('img[data-src]').innerHTML;
-};
-PxerHtmlParser.parseMediumHtml = function (_ref9) {
-    var task = _ref9.task,
-        dom = _ref9.dom,
-        url = _ref9.url,
-        pw = _ref9.pw;
-
-    pw.id = task.id;
-    pw.type = task.type;
+        dom = _ref8.dom;
 
     var illustData = dom.head.innerHTML.match(this.REGEXP['getInitData'])[0];
     illustData = this.getKeyFromStringObjectLiteral(illustData, "preload");
     illustData = this.getKeyFromStringObjectLiteral(illustData, 'illust');
-    illustData = this.getKeyFromStringObjectLiteral(illustData, pw.id);
+    illustData = this.getKeyFromStringObjectLiteral(illustData, task.id);
     illustData = JSON.parse(illustData);
 
+    var pw;
+    switch (true) {
+        case illustData.illustType === 2:
+            pw = new PxerUgoiraWorks();break;
+        case illustData.pageCount > 1:
+            pw = new PxerMultipleWorks();break;
+        default:
+            pw = new PxerWorks();break;
+    }
+
+    pw.id = task.id;
+    pw.type = this.parseIllustType(illustData.illustType);
     pw.tagList = illustData.tags.tags.map(function (e) {
         return e.tag;
     });
@@ -728,7 +1544,11 @@ PxerHtmlParser.parseMediumHtml = function (_ref9) {
 
         pw.domain = URLObj.domain;
         pw.date = src.match(PxerHtmlParser.REGEXP['getDate'])[1];
-        pw.frames = meta['body']['frames'];
+        pw.frames = {
+            framedef: meta['body']['frames'],
+            height: illustData.height,
+            width: illustData.width
+        };
     } else {
         var _src = illustData.urls.original;
         var _URLObj = parseURL(_src);
@@ -737,6 +1557,22 @@ PxerHtmlParser.parseMediumHtml = function (_ref9) {
         pw.date = _src.match(PxerHtmlParser.REGEXP['getDate'])[1];
         pw.fileFormat = _src.match(/\.(jpg|gif|png)$/)[1];
     };
+    return pw;
+};
+
+PxerHtmlParser.parseIllustType = function (type) {
+    switch (type.toString()) {
+        case "0":
+        case "illust":
+            return "illust";
+        case "1":
+        case "manga":
+            return "manga";
+        case "2":
+        case "ugoira":
+            return "ugoira";
+    }
+    return null;
 };
 
 PxerHtmlParser.REGEXP = {
@@ -874,32 +1710,32 @@ PxerHtmlParser.parseObjectLiteral = function () {
 
 PxerHtmlParser.getKeyFromStringObjectLiteral = function (s, key) {
     var resolvedpairs = this.parseObjectLiteral(s);
-    var _iteratorNormalCompletion3 = true;
-    var _didIteratorError3 = false;
-    var _iteratorError3 = undefined;
+    var _iteratorNormalCompletion6 = true;
+    var _didIteratorError6 = false;
+    var _iteratorError6 = undefined;
 
     try {
-        for (var _iterator3 = resolvedpairs[Symbol.iterator](), _step3; !(_iteratorNormalCompletion3 = (_step3 = _iterator3.next()).done); _iteratorNormalCompletion3 = true) {
-            var pair = _step3.value;
+        for (var _iterator6 = resolvedpairs[Symbol.iterator](), _step6; !(_iteratorNormalCompletion6 = (_step6 = _iterator6.next()).done); _iteratorNormalCompletion6 = true) {
+            var pair = _step6.value;
 
             if (pair[0] === key) return pair[1];
         }
     } catch (err) {
-        _didIteratorError3 = true;
-        _iteratorError3 = err;
+        _didIteratorError6 = true;
+        _iteratorError6 = err;
     } finally {
         try {
-            if (!_iteratorNormalCompletion3 && _iterator3.return) {
-                _iterator3.return();
+            if (!_iteratorNormalCompletion6 && _iterator6.return) {
+                _iterator6.return();
             }
         } finally {
-            if (_didIteratorError3) {
-                throw _iteratorError3;
+            if (_didIteratorError6) {
+                throw _iteratorError6;
             }
         }
     }
 
-    throw new Error("Key not found.");
+    return false;
 };
 
 var PxerPrinter = function () {
@@ -922,7 +1758,7 @@ var PxerPrinter = function () {
     }
 
     _createClass(PxerPrinter, [{
-        key: 'setConfig',
+        key: "setConfig",
 
 
         /**
@@ -931,13 +1767,13 @@ var PxerPrinter = function () {
          * @param {string} [value] - 要设置的value
          * */
         value: function setConfig(key, value) {
-            if (arguments.length === 1 && (typeof key === 'undefined' ? 'undefined' : _typeof(key)) === 'object') {
+            if (arguments.length === 1 && (typeof key === "undefined" ? "undefined" : _typeof(key)) === 'object') {
                 var obj = key;
                 for (var objKey in obj) {
-                    if (objKey in this.config) this.config[objKey] = obj[objKey];else console.warn('PxerPrinter.setConfig: skip key "' + objKey + '"');
+                    if (objKey in this.config) this.config[objKey] = obj[objKey];else console.warn("PxerPrinter.setConfig: skip key \"" + objKey + "\"");
                 };
             } else {
-                if (!(key in this.config)) throw new Error('PxerPrinter.setConfig: ' + key + ' is not in config');
+                if (!(key in this.config)) throw new Error("PxerPrinter.setConfig: " + key + " is not in config");
                 this.config[key] = value;
             }
             return this;
@@ -955,35 +1791,35 @@ var PxerPrinter = function () {
  * @return {void}
  * */
 PxerPrinter.prototype['fillAddress'] = function (worksList) {
-    var _iteratorNormalCompletion4 = true;
-    var _didIteratorError4 = false;
-    var _iteratorError4 = undefined;
+    var _iteratorNormalCompletion7 = true;
+    var _didIteratorError7 = false;
+    var _iteratorError7 = undefined;
 
     try {
-        for (var _iterator4 = worksList[Symbol.iterator](), _step4; !(_iteratorNormalCompletion4 = (_step4 = _iterator4.next()).done); _iteratorNormalCompletion4 = true) {
+        for (var _iterator7 = worksList[Symbol.iterator](), _step7; !(_iteratorNormalCompletion7 = (_step7 = _iterator7.next()).done); _iteratorNormalCompletion7 = true) {
             var _address;
 
-            var works = _step4.value;
+            var works = _step7.value;
 
             var configKey = PxerPrinter.getWorksKey(works);
             if (configKey === 'ugoira_zip' && this.config['ugoira_frames'] === 'yes') {
                 this.ugoiraFrames[works.id] = works.frames;
             }
-            if (!(configKey in this.config)) throw new Error('PxerPrinter.fillAddress: ' + configKey + ' in not in config');
+            if (!(configKey in this.config)) throw new Error("PxerPrinter.fillAddress: " + configKey + " in not in config");
             if (this.config[configKey] === 'no') continue;
             (_address = this.address).push.apply(_address, _toConsumableArray(PxerPrinter.countAddress(works, this.config[configKey])));
         }
     } catch (err) {
-        _didIteratorError4 = true;
-        _iteratorError4 = err;
+        _didIteratorError7 = true;
+        _iteratorError7 = err;
     } finally {
         try {
-            if (!_iteratorNormalCompletion4 && _iterator4.return) {
-                _iterator4.return();
+            if (!_iteratorNormalCompletion7 && _iterator7.return) {
+                _iterator7.return();
             }
         } finally {
-            if (_didIteratorError4) {
-                throw _iteratorError4;
+            if (_didIteratorError7) {
+                throw _iteratorError7;
             }
         }
     }
@@ -1005,13 +1841,13 @@ PxerPrinter.prototype['fillTaskInfo'] = function (worksList) {
         worksNum = _fill2[5],
         address = _fill2[6];
 
-    var _iteratorNormalCompletion5 = true;
-    var _didIteratorError5 = false;
-    var _iteratorError5 = undefined;
+    var _iteratorNormalCompletion8 = true;
+    var _didIteratorError8 = false;
+    var _iteratorError8 = undefined;
 
     try {
-        for (var _iterator5 = worksList[Symbol.iterator](), _step5; !(_iteratorNormalCompletion5 = (_step5 = _iterator5.next()).done); _iteratorNormalCompletion5 = true) {
-            var works = _step5.value;
+        for (var _iterator8 = worksList[Symbol.iterator](), _step8; !(_iteratorNormalCompletion8 = (_step8 = _iterator8.next()).done); _iteratorNormalCompletion8 = true) {
+            var works = _step8.value;
 
             var configKey = PxerPrinter.getWorksKey(works);
             if (this.config[configKey] === 'no') continue;
@@ -1030,7 +1866,7 @@ PxerPrinter.prototype['fillTaskInfo'] = function (worksList) {
                     break;
                 default:
                     console.error(works);
-                    throw new Error('PxerPrinter.fillTaskInfo: works.type illegal');
+                    throw new Error("PxerPrinter.fillTaskInfo: works.type illegal");
                     break;
             };
 
@@ -1043,25 +1879,25 @@ PxerPrinter.prototype['fillTaskInfo'] = function (worksList) {
                 single++;
             } else {
                 console.error(works);
-                throw new Error('PxerPrinter.fillTaskInfo: works instanceof illegal');
+                throw new Error("PxerPrinter.fillTaskInfo: works instanceof illegal");
             };
         }
     } catch (err) {
-        _didIteratorError5 = true;
-        _iteratorError5 = err;
+        _didIteratorError8 = true;
+        _iteratorError8 = err;
     } finally {
         try {
-            if (!_iteratorNormalCompletion5 && _iterator5.return) {
-                _iterator5.return();
+            if (!_iteratorNormalCompletion8 && _iterator8.return) {
+                _iterator8.return();
             }
         } finally {
-            if (_didIteratorError5) {
-                throw _iteratorError5;
+            if (_didIteratorError8) {
+                throw _iteratorError8;
             }
         }
     }
 
-    this.taskInfo = ('\n\u5171\u8BA1' + worksNum + '\u4E2A\u4F5C\u54C1\uFF0C' + address + '\u4E2A\u4E0B\u8F7D\u5730\u5740\u3002<br />\n\u5355\u5F20\u56FE\u7247\u4F5C\u54C1\u5360 ' + (single / worksNum * 100).toFixed(1) + '%<br />\n\u591A\u5F20\u56FE\u7247\u4F5C\u54C1\u5360 ' + (multiple / worksNum * 100).toFixed(1) + '%<br />\n').trim();
+    this.taskInfo = ("\n\u5171\u8BA1" + worksNum + "\u4E2A\u4F5C\u54C1\uFF0C" + address + "\u4E2A\u4E0B\u8F7D\u5730\u5740\u3002<br />\n\u5355\u5F20\u56FE\u7247\u4F5C\u54C1\u5360 " + (single / worksNum * 100).toFixed(1) + "%<br />\n\u591A\u5F20\u56FE\u7247\u4F5C\u54C1\u5360 " + (multiple / worksNum * 100).toFixed(1) + "%<br />\n").trim();
 };
 /**
  * 将结果输出
@@ -1076,7 +1912,15 @@ PxerPrinter.prototype['print'] = function () {
             alert('Pxer:\n浏览器拦截了弹出窗口，请检查浏览器提示，设置允许此站点的弹出式窗口。');
             return;
         };
-        var str = ['<pre>', '/** 这个页面是动图压缩包的动画参数，目前Pxer还无法将动图压缩包打包成GIF，请寻找其他第三方软件 */', JSON.stringify(this.ugoiraFrames, null, 4), '</pre>'];
+
+        var scriptname = "";
+        switch (navigator.platform) {
+            case "Win32":
+                scriptname = "bat批处理";break;
+            default:
+                scriptname = "bash";break;
+        }
+        var str = ['<p>/** 这个页面是自动生成的使用FFmpeg自行合成动图的' + scriptname + '脚本，详细使用教程见<a href="http://pxer.pea3nut.org/md/ugoira_concat" target="_blank" >http://pxer.pea3nut.org/md/ugoira_concat</a> */</p>', '<textarea style="height:100%; width:100%" readonly>'].concat(_toConsumableArray(this.generateUgoiraScript(this.ugoiraFrames)), ['</textarea>']);
         win.document.write(str.join('\n'));
     };
 
@@ -1087,7 +1931,7 @@ PxerPrinter.prototype['print'] = function () {
             alert('Pxer:\n浏览器拦截了弹出窗口，请检查浏览器提示，设置允许此站点的弹出式窗口。');
             return;
         };
-        var _str = ['<pre>', '/** 这个页面是抓取到的下载地址，你可以将它们复制到第三方下载工具如QQ旋风中下载 */', '/**', this.taskInfo.replace(/\<br \/\>/g, ''), '*/', this.address.join('\n'), '</pre>'];
+        var _str = ['<p>', '/** 这个页面是抓取到的下载地址，你可以将它们复制到第三方下载工具如QQ旋风中下载 */<br />', this.taskInfo, '</p>', '<textarea style="height:100%; width:100%" readonly>', this.address.join('\n'), '</textarea>'];
         _win.document.write(_str.join('\n'));
     }
 };
@@ -1107,6 +1951,91 @@ PxerPrinter.getWorksKey = function (works) {
     };
     return configKey;
 };
+
+/**
+ * 根据动图参数，生成ffmpeg脚本
+ * @param 动图参数
+ * @return {String[]} 生成的脚本行
+ * @see PxerPrinter.prototype['print']
+ */
+PxerPrinter.prototype['generateUgoiraScript'] = function (frames) {
+    var lines = [];
+    var resstring;
+    var ffmpeg;
+    var isWindows = ['Win32', 'Win64', 'Windows', 'WinCE'].indexOf(navigator.platform) !== -1;
+    switch (this.config.ugoira_zip) {
+        case "max":
+            resstring = "1920x1080";break;
+        case "600p":
+            resstring = "600x338";break;
+    }
+    var slashstr = "";
+    if (isWindows) {
+        slashstr = "^";
+        ffmpeg = "ffmpeg";
+        lines.push("@echo off");
+        lines.push("set /p ext=请输入输出文件扩展名(mp4/gif/...):");
+    } else {
+        slashstr = "\\";
+        ffmpeg = "$ffmpeg";
+        lines.push("#!/bin/bash");
+        lines.push("");
+        lines.push("{ hash ffmpeg 2>/dev/null && ffmpeg=ffmpeg;} || { [ -x ./ffmpeg ] && ffmpeg=./ffmpeg;} || { echo >&2 \"Failed to locate ffmpeg executable. Aborting.\"; exit 1;}");
+        lines.push("read -p '请输入输出文件扩展名(mp4/gif/...):' ext");
+    }
+    for (var key in frames) {
+        var foldername = key + "_ugoira" + resstring;
+        var confpath = foldername + "/config.txt";
+        var height = frames[key].height;
+        var width = frames[key].width;
+        if (this.config.ugoira_zip === "600p") {
+            var scale = Math.max(height, width) / 600;
+            height = parseInt(height / scale);
+            width = parseInt(width / scale);
+        }
+        lines.push(isWindows ? "del " + foldername + "\\config.txt >nul 2>nul" : "rm " + foldername + "/config.txt &> /dev/null");
+        var _iteratorNormalCompletion9 = true;
+        var _didIteratorError9 = false;
+        var _iteratorError9 = undefined;
+
+        try {
+            for (var _iterator9 = frames[key].framedef[Symbol.iterator](), _step9; !(_iteratorNormalCompletion9 = (_step9 = _iterator9.next()).done); _iteratorNormalCompletion9 = true) {
+                var frame = _step9.value;
+
+                lines.push("echo file " + slashstr + "'" + frame['file'] + slashstr + "' >> " + confpath);
+                lines.push("echo duration " + frame['delay'] / 1000 + " >> " + confpath);
+            }
+        } catch (err) {
+            _didIteratorError9 = true;
+            _iteratorError9 = err;
+        } finally {
+            try {
+                if (!_iteratorNormalCompletion9 && _iterator9.return) {
+                    _iterator9.return();
+                }
+            } finally {
+                if (_didIteratorError9) {
+                    throw _iteratorError9;
+                }
+            }
+        }
+
+        lines.push("echo file " + slashstr + "'" + frames[key].framedef[frames[key].framedef.length - 1]['file'] + slashstr + "' >> " + confpath);
+        lines.push(isWindows ? "if %ext%==gif (" : "if [ $ext == \"gif\"]; then");
+        lines.push(ffmpeg + " -f concat -i " + confpath + " -vf palettegen " + foldername + "/palette.png");
+        lines.push(ffmpeg + " -f concat -i " + confpath + " -i " + foldername + "/palette.png -lavfi paletteuse -framerate 30 -vsync -1 -s " + width + "x" + height + " " + foldername + "/remux." + (isWindows ? "%ext%" : "$ext"));
+        lines.push(isWindows ? ") else (" : "else");
+        lines.push(ffmpeg + " -f concat -i " + confpath + " -framerate 30 -vsync -1 -s " + width + "x" + height + " " + foldername + "/remux." + (isWindows ? "%ext%" : "$ext"));
+        lines.push(isWindows ? ")" : "fi");
+    }
+    if (isWindows) {
+        lines.push("echo 完成 & pause");
+    } else {
+        lines.push("read  -n 1 -p \"完成，按任意键退出\" m && echo");
+    }
+    return lines;
+};
+
 /**返回默认的配置对象*/
 PxerPrinter.defaultConfig = function () {
     return {
@@ -1145,10 +2074,10 @@ PxerPrinter.getUgoira = function (works) {
     };
 
     var address = tpl[type];
-    if (!address) throw new Error('PxerPrint.getUgoira: unknown type "' + type + '"');
+    if (!address) throw new Error("PxerPrint.getUgoira: unknown type \"" + type + "\"");
 
     for (var key in works) {
-        address = address.replace('#' + key + '#', works[key]);
+        address = address.replace("#" + key + "#", works[key]);
     };
 
     return [address];
@@ -1169,10 +2098,10 @@ PxerPrinter.getMultiple = function (works) {
     };
 
     var address = tpl[type];
-    if (!address) throw new Error('PxerPrint.getMultiple: unknown type "' + type + '"');
+    if (!address) throw new Error("PxerPrint.getMultiple: unknown type \"" + type + "\"");
 
     for (var key in works) {
-        address = address.replace('#' + key + '#', works[key]);
+        address = address.replace("#" + key + "#", works[key]);
     };
 
     //渲染多张
@@ -1198,10 +2127,10 @@ PxerPrinter.getWorks = function (works) {
     };
 
     var address = tpl[type];
-    if (!address) throw new Error('PxerPrint.getWorks: unknown type "' + type + '"');
+    if (!address) throw new Error("PxerPrint.getWorks: unknown type \"" + type + "\"");
 
     for (var key in works) {
-        address = address.replace('#' + key + '#', works[key]);
+        address = address.replace("#" + key + "#", works[key]);
     }
 
     return [address];
@@ -1233,9 +2162,9 @@ var PxerThread = function (_PxerEvent) {
      * @param {Object} config 线程的配置信息
      * */
     function PxerThread() {
-        var _ref10 = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {},
-            id = _ref10.id,
-            config = _ref10.config;
+        var _ref9 = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {},
+            id = _ref9.id,
+            config = _ref9.config;
 
         _classCallCheck(this, PxerThread);
 
@@ -1312,7 +2241,7 @@ PxerThread.prototype['init'] = function (task) {
 
     // 必要的检查
     if (Number.isNaN(+this.config.timeout) || Number.isNaN(+this.config.retry)) {
-        throw new Error('PxerThread#init: ' + this.id + ' config illegal');
+        throw new Error("PxerThread#init: " + this.id + " config illegal");
     }
 
     //判断行为，读取要请求的URL
@@ -1321,7 +2250,7 @@ PxerThread.prototype['init'] = function (task) {
     } else if (this.task instanceof PxerPageRequest) {
         this.runtime.urlList = [this.task.url];
     } else {
-        this.dispatch('error', 'PxerThread#' + this.id + '.init: unknown task');
+        this.dispatch('error', "PxerThread#" + this.id + ".init: unknown task");
         return false;
     };
 };
@@ -1433,13 +2362,13 @@ var PxerThreadManager = function (_PxerEvent2) {
      * @param {number} thread  - 线程数
      * */
     function PxerThreadManager() {
-        var _ref11 = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {},
-            _ref11$timeout = _ref11.timeout,
-            timeout = _ref11$timeout === undefined ? 5000 : _ref11$timeout,
-            _ref11$retry = _ref11.retry,
-            retry = _ref11$retry === undefined ? 3 : _ref11$retry,
-            _ref11$thread = _ref11.thread,
-            thread = _ref11$thread === undefined ? 8 : _ref11$thread;
+        var _ref10 = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {},
+            _ref10$timeout = _ref10.timeout,
+            timeout = _ref10$timeout === undefined ? 5000 : _ref10$timeout,
+            _ref10$retry = _ref10.retry,
+            retry = _ref10$retry === undefined ? 3 : _ref10$retry,
+            _ref10$thread = _ref10.thread,
+            thread = _ref10$thread === undefined ? 8 : _ref10$thread;
 
         _classCallCheck(this, PxerThreadManager);
 
@@ -1529,13 +2458,13 @@ PxerThreadManager.prototype['run'] = function () {
         return false;
     };
 
-    var _iteratorNormalCompletion6 = true;
-    var _didIteratorError6 = false;
-    var _iteratorError6 = undefined;
+    var _iteratorNormalCompletion10 = true;
+    var _didIteratorError10 = false;
+    var _iteratorError10 = undefined;
 
     try {
         var _loop = function _loop() {
-            var thread = _step6.value;
+            var thread = _step10.value;
 
 
             thread.on('load', function (data) {
@@ -1550,20 +2479,20 @@ PxerThreadManager.prototype['run'] = function () {
             next(_this8, thread);
         };
 
-        for (var _iterator6 = this.threads[Symbol.iterator](), _step6; !(_iteratorNormalCompletion6 = (_step6 = _iterator6.next()).done); _iteratorNormalCompletion6 = true) {
+        for (var _iterator10 = this.threads[Symbol.iterator](), _step10; !(_iteratorNormalCompletion10 = (_step10 = _iterator10.next()).done); _iteratorNormalCompletion10 = true) {
             _loop();
         }
     } catch (err) {
-        _didIteratorError6 = true;
-        _iteratorError6 = err;
+        _didIteratorError10 = true;
+        _iteratorError10 = err;
     } finally {
         try {
-            if (!_iteratorNormalCompletion6 && _iterator6.return) {
-                _iterator6.return();
+            if (!_iteratorNormalCompletion10 && _iterator10.return) {
+                _iterator10.return();
             }
         } finally {
-            if (_didIteratorError6) {
-                throw _iteratorError6;
+            if (_didIteratorError10) {
+                throw _iteratorError10;
             }
         }
     }
@@ -1619,8 +2548,9 @@ var PxerApp = function (_PxerEvent3) {
         /**
          * 页面的作品数量
          * @type {number|null}
+         * @see PxerApp.init
          * */
-        _this9.worksNum = PxerApp.getWorksNum();
+        _this9.worksNum = null;
 
         /**
          * 任务队列
@@ -1672,19 +2602,52 @@ var PxerApp = function (_PxerEvent3) {
     }
 
     _createClass(PxerApp, [{
-        key: 'stop',
+        key: "init",
 
+
+        /**
+         * 初始化时的耗时任务
+         */
+        value: function () {
+            var _ref11 = _asyncToGenerator( /*#__PURE__*/regeneratorRuntime.mark(function _callee() {
+                return regeneratorRuntime.wrap(function _callee$(_context) {
+                    while (1) {
+                        switch (_context.prev = _context.next) {
+                            case 0:
+                                _context.next = 2;
+                                return PxerApp.getWorksNum(document);
+
+                            case 2:
+                                this.worksNum = _context.sent;
+
+                            case 3:
+                            case "end":
+                                return _context.stop();
+                        }
+                    }
+                }, _callee, this);
+            }));
+
+            function init() {
+                return _ref11.apply(this, arguments);
+            }
+
+            return init;
+        }()
 
         /**
          * 停止执行当前任务
          * 调用后仍会触发对应的finish*事件
          * */
+
+    }, {
+        key: "stop",
         value: function stop() {
             this.dispatch('stop');
             this.ptm.stop();
         }
     }, {
-        key: 'initPageTask',
+        key: "initPageTask",
 
 
         /**初始化批量任务*/
@@ -1694,19 +2657,51 @@ var PxerApp = function (_PxerEvent3) {
                 return false;
             };
 
-            var onePageWorksNumber = this.pageType === 'search' ? 40 : 20;
+            var onePageWorksNumber = getOnePageWorkCount(this.pageType);
 
             var pageNum = Math.ceil(this.taskOption.limit ? this.taskOption.limit : this.worksNum) / onePageWorksNumber;
 
-            var separator = /\?/.test(document.URL) ? "&" : "?";
-            for (var i = 0; i < pageNum; i++) {
+            if (this.pageType === "discovery") {
+                var mode;
+                switch (true) {
+                    case document.URL.match(/mode=(r18|safe|all)/) === null:
+                        mode = "all";break;
+                    default:
+                        mode = document.URL.match(/mode=(r18|safe|all)/)[1];break;
+                }
+                var recomCount = this.taskOption.limit ? this.taskOption.limit : this.worksNum;
                 this.taskList.push(new PxerPageRequest({
-                    url: document.URL + separator + "p=" + (i + 1)
+                    url: "https://www.pixiv.net/rpc/recommender.php?type=illust&sample_illusts=auto&num_recommendations=" + recomCount + "&page=discovery&mode=" + mode + "&tt=" + pixiv.context.token,
+                    type: this.pageType
                 }));
+            } else if (this.pageType === "member_works_new") {
+                var uid = getIDfromURL();
+                var type = document.URL.match(/type=(\w+)/) ? document.URL.match(/type=(\w+)/)[1] : "all";
+                this.taskList.push(new PxerPageRequest({
+                    url: "https://www.pixiv.net/ajax/user/" + uid + "/profile/all",
+                    type: type ? "userprofile_" + type : "userprofile_all"
+                }));
+            } else if (this.pageType === "bookmark_works") {
+                for (var offset = 0; offset < 48 * pageNum; offset += 48) {
+                    var id = getIDfromURL() || getIDfromURL("id", document.querySelector("a.user-name").getAttribute("href")); // old bookmark page
+                    this.taskList.push(new PxerPageRequest({
+                        type: this.pageType,
+                        url: "https://www.pixiv.net/ajax/user/" + id + "/illusts/bookmarks?tag=&offset=" + offset + "&limit=48&rest=show"
+                    }));
+                }
+            } else {
+                var separator = document.URL.includes("?") ? "&" : "?";
+                var extraparam = this.pageType === 'rank' ? "&format=json" : "";
+                for (var i = 0; i < pageNum; i++) {
+                    this.taskList.push(new PxerPageRequest({
+                        type: this.pageType,
+                        url: document.URL + separator + "p=" + (i + 1) + extraparam
+                    }));
+                };
             };
         }
     }, {
-        key: 'executePageTask',
+        key: "executePageTask",
 
         /**抓取页码*/
         value: function executePageTask() {
@@ -1742,13 +2737,13 @@ var PxerApp = function (_PxerEvent3) {
             });
             ptm.on('load', function () {
                 var parseResult = [];
-                var _iteratorNormalCompletion7 = true;
-                var _didIteratorError7 = false;
-                var _iteratorError7 = undefined;
+                var _iteratorNormalCompletion11 = true;
+                var _didIteratorError11 = false;
+                var _iteratorError11 = undefined;
 
                 try {
-                    for (var _iterator7 = _this10.taskList[Symbol.iterator](), _step7; !(_iteratorNormalCompletion7 = (_step7 = _iterator7.next()).done); _iteratorNormalCompletion7 = true) {
-                        var result = _step7.value;
+                    for (var _iterator11 = _this10.taskList[Symbol.iterator](), _step11; !(_iteratorNormalCompletion11 = (_step11 = _iterator11.next()).done); _iteratorNormalCompletion11 = true) {
+                        var result = _step11.value;
 
                         result = PxerHtmlParser.parsePage(result);
                         if (!result) {
@@ -1758,16 +2753,16 @@ var PxerApp = function (_PxerEvent3) {
                         parseResult.push.apply(parseResult, _toConsumableArray(result));
                     }
                 } catch (err) {
-                    _didIteratorError7 = true;
-                    _iteratorError7 = err;
+                    _didIteratorError11 = true;
+                    _iteratorError11 = err;
                 } finally {
                     try {
-                        if (!_iteratorNormalCompletion7 && _iterator7.return) {
-                            _iterator7.return();
+                        if (!_iteratorNormalCompletion11 && _iterator11.return) {
+                            _iterator11.return();
                         }
                     } finally {
-                        if (_didIteratorError7) {
-                            throw _iteratorError7;
+                        if (_didIteratorError11) {
+                            throw _iteratorError11;
                         }
                     }
                 }
@@ -1783,7 +2778,7 @@ var PxerApp = function (_PxerEvent3) {
             ptm.run();
         }
     }, {
-        key: 'executeWroksTask',
+        key: "executeWroksTask",
 
         /**
          * 抓取作品
@@ -1804,6 +2799,11 @@ var PxerApp = function (_PxerEvent3) {
                 this.dispatch('error', 'PxerApp.executeWroksTask: taskList is illegal');
                 return false;
             };
+
+            // 任务按ID降序排列(#133)
+            tasks.sort(function (a, b) {
+                return Number(b.id) - Number(a.id);
+            });
 
             this.dispatch('executeWroksTask');
 
@@ -1842,13 +2842,13 @@ var PxerApp = function (_PxerEvent3) {
                 _this11.resultSet = [];
                 var tl = _this11.taskList.slice( //限制结果集条数
                 0, _this11.taskOption.limit ? _this11.taskOption.limit : undefined);
-                var _iteratorNormalCompletion8 = true;
-                var _didIteratorError8 = false;
-                var _iteratorError8 = undefined;
+                var _iteratorNormalCompletion12 = true;
+                var _didIteratorError12 = false;
+                var _iteratorError12 = undefined;
 
                 try {
-                    for (var _iterator8 = tl[Symbol.iterator](), _step8; !(_iteratorNormalCompletion8 = (_step8 = _iterator8.next()).done); _iteratorNormalCompletion8 = true) {
-                        var pwr = _step8.value;
+                    for (var _iterator12 = tl[Symbol.iterator](), _step12; !(_iteratorNormalCompletion12 = (_step12 = _iterator12.next()).done); _iteratorNormalCompletion12 = true) {
+                        var pwr = _step12.value;
 
                         if (!pwr.completed) continue; //跳过未完成的任务
                         var pw = PxerHtmlParser.parseWorks(pwr);
@@ -1865,16 +2865,16 @@ var PxerApp = function (_PxerEvent3) {
                         _this11.resultSet.push(pw);
                     }
                 } catch (err) {
-                    _didIteratorError8 = true;
-                    _iteratorError8 = err;
+                    _didIteratorError12 = true;
+                    _iteratorError12 = err;
                 } finally {
                     try {
-                        if (!_iteratorNormalCompletion8 && _iterator8.return) {
-                            _iterator8.return();
+                        if (!_iteratorNormalCompletion12 && _iterator12.return) {
+                            _iterator12.return();
                         }
                     } finally {
-                        if (_didIteratorError8) {
-                            throw _iteratorError8;
+                        if (_didIteratorError12) {
+                            throw _iteratorError12;
                         }
                     }
                 }
@@ -1890,7 +2890,7 @@ var PxerApp = function (_PxerEvent3) {
             return true;
         }
     }, {
-        key: 'executeFailWroks',
+        key: "executeFailWroks",
 
         /**对失败的作品进行再抓取*/
         value: function executeFailWroks() {
@@ -1906,7 +2906,7 @@ var PxerApp = function (_PxerEvent3) {
             }));
         }
     }, {
-        key: 'switchPage2Works',
+        key: "switchPage2Works",
 
         /**抓取页码完成后，初始化，准备抓取作品*/
         value: function switchPage2Works() {
@@ -1916,7 +2916,7 @@ var PxerApp = function (_PxerEvent3) {
             this.resultSet = [];
         }
     }, {
-        key: 'getWorksInfo',
+        key: "getWorksInfo",
 
         /**
          * 获取当前抓取到的可读的任务信息
@@ -1929,11 +2929,10 @@ var PxerApp = function (_PxerEvent3) {
             return pp.taskInfo;
         }
     }, {
-        key: 'printWorks',
+        key: "printWorks",
 
         /**
          * 输出抓取到的作品
-         * @return {string}
          * */
         value: function printWorks() {
             var pp = new PxerPrinter(this.ppConfig);
@@ -1951,42 +2950,86 @@ var PxerApp = function (_PxerEvent3) {
 ;
 
 /**直接抓取本页面的作品*/
-PxerApp.prototype['getThis'] = function () {
+PxerApp.prototype['getThis'] = _asyncToGenerator( /*#__PURE__*/regeneratorRuntime.mark(function _callee2() {
     var _this12 = this;
 
-    // 生成任务对象
-    var initdata = document.head.innerHTML.match(PxerHtmlParser.REGEXP['getInitData'])[0];
-    var id = document.URL.match(/illust_id=(\d+)/)[1];
+    var initdata, id, type, pageCount, pwr;
+    return regeneratorRuntime.wrap(function _callee2$(_context2) {
+        while (1) {
+            switch (_context2.prev = _context2.next) {
+                case 0:
+                    // 生成任务对象
+                    initdata = document.head.innerHTML.match(PxerHtmlParser.REGEXP['getInitData'])[0];
+                    id = getIDfromURL("illust_id");
 
-    initdata = PxerHtmlParser.getKeyFromStringObjectLiteral(initdata, "preload");
-    initdata = PxerHtmlParser.getKeyFromStringObjectLiteral(initdata, 'illust');
-    initdata = PxerHtmlParser.getKeyFromStringObjectLiteral(initdata, id);
-    initdata = JSON.parse(initdata);
 
-    var type = initdata.illustType;
-    var pageCount = initdata.pageCount;
-    var pwr = new PxerWorksRequest({
-        isMultiple: pageCount > 1,
-        id: id
-    }); //[manga|ugoira|illust]
-    switch (type) {
-        case 2:
-            pwr.type = 'ugoira';break;
-        case 1:
-            pwr.type = 'illust';break;
-        case 0:
-            pwr.type = 'manga';break;
-        default:
-            throw new Error("Unknown work type. id:" + id);
-    }
-    pwr.url = PxerHtmlParser.getUrlList(pwr);
-    // 添加执行
-    this.taskList.push(pwr);
-    this.one('finishWorksTask', function () {
-        return _this12.printWorks();
-    });
-    this.executeWroksTask();
-};
+                    initdata = PxerHtmlParser.getKeyFromStringObjectLiteral(initdata, "preload");
+                    initdata = PxerHtmlParser.getKeyFromStringObjectLiteral(initdata, 'illust');
+                    initdata = PxerHtmlParser.getKeyFromStringObjectLiteral(initdata, id);
+
+                    if (!initdata) {
+                        _context2.next = 9;
+                        break;
+                    }
+
+                    initdata = JSON.parse(initdata);
+                    _context2.next = 14;
+                    break;
+
+                case 9:
+                    _context2.next = 11;
+                    return fetch("https://www.pixiv.net/ajax/illust/" + id, { credentials: 'include' });
+
+                case 11:
+                    _context2.next = 13;
+                    return _context2.sent.json();
+
+                case 13:
+                    initdata = _context2.sent['body'];
+
+                case 14:
+                    ;
+
+                    type = initdata.illustType;
+                    pageCount = initdata.pageCount;
+                    pwr = new PxerWorksRequest({
+                        isMultiple: pageCount > 1,
+                        id: id
+                    }); //[manga|ugoira|illust]
+
+                    _context2.t0 = type;
+                    _context2.next = _context2.t0 === 2 ? 21 : _context2.t0 === 1 ? 23 : _context2.t0 === 0 ? 25 : 27;
+                    break;
+
+                case 21:
+                    pwr.type = 'ugoira';return _context2.abrupt("break", 28);
+
+                case 23:
+                    pwr.type = 'illust';return _context2.abrupt("break", 28);
+
+                case 25:
+                    pwr.type = 'manga';return _context2.abrupt("break", 28);
+
+                case 27:
+                    throw new Error("Unknown work type. id:" + id);
+
+                case 28:
+                    pwr.url = PxerHtmlParser.getUrlList(pwr);
+                    // 添加执行
+                    this.taskList = [pwr];
+                    this.one('finishWorksTask', function () {
+                        return _this12.printWorks();
+                    });
+                    this.executeWroksTask();
+                    return _context2.abrupt("return", true);
+
+                case 33:
+                case "end":
+                    return _context2.stop();
+            }
+        }
+    }, _callee2, this);
+}));
 
 /**
  * 获取当前页面的总作品数
@@ -1994,9 +3037,97 @@ PxerApp.prototype['getThis'] = function () {
  * @return {number} - 作品数
  * */
 PxerApp.getWorksNum = function () {
+    var _this13 = this;
+
     var dom = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : document;
 
-    var elt = dom.querySelector(".count-badge");
-    if (!elt) return null;
-    return parseInt(elt.innerHTML);
+    return new Promise(function (resolve, reject) {
+        if (getPageType() === "rank") {
+            var queryurl = dom.URL + "&format=json";
+            var xhr = new XMLHttpRequest();
+            xhr.open("GET", queryurl);
+            xhr.onload = function (e) {
+                return resolve(JSON.parse(xhr.responseText)['rank_total']);
+            };
+            xhr.send();
+        } else if (getPageType() === "bookmark_new") {
+            // 关注的新作品页数最多100页
+            // 因为一般用户关注的用户数作品都足够填满100页，所以从100开始尝试页数
+            // 如果没有100页进行一次二分查找
+            var currpage = parseInt(dom.querySelector("ul.page-list>li.current").innerHTML);
+            _this13.getFollowingBookmarkWorksNum(currpage, 100, 100).then(function (res) {
+                return resolve(res);
+            });
+        } else if (getPageType() === "discovery") {
+            resolve(3000);
+        } else if (getPageType() === "bookmark_works") {
+            var id = getIDfromURL("id", dom.URL) || getIDfromURL("id", dom.querySelector("a.user-name").getAttribute("href")); // old bookmark page
+            var _queryurl = "https://www.pixiv.net/ajax/user/" + id + "/illusts/bookmarks?tag=&offset=0&limit=48&rest=show";
+            var _xhr = new XMLHttpRequest();
+            _xhr.open("GET", _queryurl);
+            _xhr.onload = function (e) {
+                resolve(JSON.parse(_xhr.responseText).body.total);
+            };
+            _xhr.send();
+        } else if (getPageType() === "member_works_new") {
+            var _queryurl2 = "https://www.pixiv.net/ajax/user/" + getIDfromURL() + "/profile/all";
+            var _xhr2 = new XMLHttpRequest();
+            _xhr2.open("GET", _queryurl2);
+            _xhr2.onload = function (e) {
+                var resp = JSON.parse(_xhr2.responseText).body;
+                var type = dom.URL.match(/type=(manga|illust)/);
+                var getKeyCount = function getKeyCount(obj) {
+                    return Object.keys(obj).length;
+                };
+                if (!type) {
+                    resolve(getKeyCount(resp.illusts) + getKeyCount(resp.manga));
+                } else if (type[1] === "illust") {
+                    resolve(getKeyCount(resp.illusts));
+                } else {
+                    resolve(getKeyCount(resp.manga));
+                }
+            };
+            _xhr2.send();
+        } else {
+            var elt = dom.querySelector(".count-badge");
+            if (!elt) resolve(null);
+            resolve(parseInt(elt.innerHTML));
+        }
+    });
+};
+
+/**
+ * 获取关注的新作品页的总作品数
+ * @param {number} min - 最小页数
+ * @param {number} max - 最大页数
+ * @param {number} cur - 当前页数
+ * @return {number} - 作品数
+ */
+PxerApp.getFollowingBookmarkWorksNum = function (min, max, cur) {
+    var _this14 = this;
+
+    return new Promise(function (resolve, reject) {
+        var xhr = new XMLHttpRequest();
+        xhr.open("GET", "https://www.pixiv.net/bookmark_new_illust.php?p=" + cur);
+        xhr.onload = function (e) {
+            var html = xhr.response;
+            var el = document.createElement("div");
+            el.innerHTML = html;
+            if (min === max) {
+                var lastworkcount = JSON.parse(el.querySelector("div#js-mount-point-latest-following").getAttribute("data-items")).length;
+                resolve((min - 1) * 20 + lastworkcount);
+            } else {
+                if (!!el.querySelector("div._no-item")) {
+                    _this14.getFollowingBookmarkWorksNum(min, cur - 1, parseInt((min + cur) / 2)).then(function (res) {
+                        return resolve(res);
+                    });
+                } else {
+                    _this14.getFollowingBookmarkWorksNum(cur, max, parseInt((cur + max + 1) / 2)).then(function (res) {
+                        return resolve(res);
+                    });
+                }
+            }
+        };
+        xhr.send();
+    });
 };

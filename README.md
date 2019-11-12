@@ -90,7 +90,46 @@ pxer-app
 
 ## 自己动手构建Pxer
 
-【待补完】
+### 搭建本地开发环境
+
+1. 安装依赖
+```bash
+npm i
+```
+
+2. 运行本地开发服务器，监视文件改动并自动编译css和释出文件
+```bash
+npm run dev
+```
+
+3. 修改入口文件
+- 方法一：在Tampermonkey中修改入口文件的PXER_URL为本地服务器地址（默认为http://127.0.0.1:8125/ ）
+- 方法二(推荐)：访问 http://127.0.0.1:8125/pxer-dev-local.user.js (开发版) http://127.0.0.1:8125/pxer-local.user.js (稳定版) 安装自动生成的本地开发入口文件
+
+
+
+### 构建释出文件（稳定版）
+
+```bash
+npm run build
+```
+
+### 生产环境部署
+
+Pxer可以使用Apache,Nginx等常见HTTP服务器进行部署，也可以使用pm2+express进行部署。
+
+使用pm2部署：
+
+1. 安装依赖
+```bash
+npm i -g pm2
+npm i --production
+```
+2. 编辑prod-server.yml文件，指定https证书路径
+3. 运行服务器
+```bash
+npm run prod
+```
 
 ## 开源协议
 

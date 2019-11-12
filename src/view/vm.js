@@ -2,7 +2,8 @@ afterLoad(function(){
     // 寻找插入点
     var elt =document.createElement('div');
     var insetElt=(
-        document.getElementById('wrapper')
+        document.getElementById('pxer-app')
+        || document.getElementById('wrapper')
         || document.getElementById('root').childNodes[1] //skip <header>
         || document.body
     );
@@ -14,9 +15,10 @@ afterLoad(function(){
         data(){return {
             pxer:new PxerApp(),
             showAll:false,
-            state:'loaded',//[loaded|ready|page|works|finish|re-ready|stop|error]
+            state:'standby',//[standby|init|ready|page|works|finish|re-ready|stop|error]
             stateMap:{
-                loaded:'初始完毕',
+                standby:'待命',
+                init  :'初始化',
                 ready :'就绪',
                 page  :'抓取页码中',
                 works :'抓取作品中',
@@ -39,22 +41,41 @@ afterLoad(function(){
             },
             showLoadBtn:true,
             errmsg:'',
+            analytics:new PxerAnalytics(),
         }},
         created(){
             window['PXER_VM'] =this;
+            window['PXER_ANALYTICS'] =this.analytics;
+            this.analytics.postData("pxer.app.created", {});
             this.pxer.on('error',(err)=>{
                 this.errmsg =err;
             });
-            this.pxer.on('finishWorksTask',function(){
-                window.blinkTitle();
-            });
+            this.pxer.on('finishWorksTask',(result) =>{
+                this.analytics.postData("pxer.app.finish", {
+                    result_count:result.length,
+                    ptm_config:this.pxer.ptmConfig,
+                    task_option:this.pxer.taskOption,
+                    error_count:this.pxer.failList.length,
+                });
+            })
+        },
+        mounted(){
+            var getResultList=()=>[].concat.apply([], this.pxer.resultSet.map((res)=>res.tagList));
+            new AutoSuggestControl("no_tag_any", getResultList);
+            new AutoSuggestControl("no_tag_every", getResultList);
+            new AutoSuggestControl("has_tag_some", getResultList);
+            new AutoSuggestControl("has_tag_every", getResultList);
         },
         computed:{
             pageType(){
                 var map ={
                     'member_works'     :'作品列表页',
+                    'member_works_new' :'作品列表页_',
                     'search'           :'检索页',
                     'bookmark_works'   :'收藏列表页',
+                    'rank'             :'排行榜',
+                    'bookmark_new'     :'关注的新作品',
+                    'discovery'        :'探索',
                     'unknown'          :'未知',
                 };
                 return map[this.pxer.pageType];
@@ -67,7 +88,8 @@ afterLoad(function(){
                 return this.pxer.taskOption.limit ||this.pxer.worksNum;
             },
             taskCount(){
-                return Math.ceil(this.worksNum/20)+ +this.worksNum;
+                var pageWorkCount = getOnePageWorkCount(this.pxer.pageType);
+                return Math.ceil(this.worksNum/pageWorkCount)+ +this.worksNum;
             },
             finishCount(){
                 if(this.state==='page'){
@@ -156,15 +178,30 @@ afterLoad(function(){
         },
         methods:{
             load(){
+                this.state='init';
                 if(this.pxer.pageType==='works_medium'){
-                    this.pxer.getThis();
                     this.showLoadBtn=false;
-                    this.pxer.one('finishWorksTask',()=>this.showLoadBtn=true);
+                    this.pxer.one('finishWorksTask',()=>{
+                        this.showLoadBtn=true;
+                        this.state='standby';
+                    });
+                    this.pxer.getThis();
                 }else{
-                    this.state='ready'
+                    this.pxer.init().then(()=>this.state='ready');
+                    this.pxer.on('finishWorksTask',()=>{
+                        window.blinkTitle();
+                    });
                 }
+                this.analytics.postData("pxer.app.load", {
+                    page_type:this.pxer.pageType,
+                });
             },
             run(){
+                this.analytics.postData("pxer.app.start", {
+                    ptm_config:this.pxer.ptmConfig,
+                    task_option:this.pxer.taskOption,
+                    vm_state:this.state,
+                });
                 if(this.state==='ready'){
                     this.state='page';
                     this.pxer.initPageTask();
@@ -189,12 +226,31 @@ afterLoad(function(){
             stop(){
                 this.state='stop';
                 this.pxer.stop();
+                this.analytics.postData("pxer.app.halt", {
+                    task_count:this.taskCount,
+                    finish_count:this.finishCount,
+                });
             },
             count(){
                 this.taskInfo =this.pxer.getWorksInfo()
             },
+            printWorks(){
+                this.pxer.printWorks();
+                var sanitizedpfConfig = {};
+                for (let key in this.pxer.pfConfig) {
+                    sanitizedpfConfig[key] = this.pxer.pfConfig[key].length?this.pxer.pfConfig[key].length:this.pxer.pfConfig[key];
+                }
+                this.analytics.postData("pxer.app.print", {
+                    pp_config:this.pxer.ppConfig,
+                    pf_config:sanitizedpfConfig,
+                    task_option:this.pxer.taskOption,
+                });
+            },
             useTaskOption(){
                 this.showTaskOption=false;
+                this.analytics.postData("pxer.app.taskoption", {
+                    task_option: this.taskOption,
+                });
                 Object.assign(this.pxer.taskOption ,this.taskOption);
             },
             formatFailType(type){
@@ -219,6 +275,9 @@ afterLoad(function(){
             },
             tryCheckedPfi(){
                 this.tryFailWroksList.push(...this.checkedFailWorksList);
+                this.analytics.postData("pxer.app.reready", {
+                    checked_works:this.checkedFailWorksList,
+                });
                 this.checkedFailWorksList=[];
                 this.state='re-ready';
             },

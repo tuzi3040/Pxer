@@ -12,64 +12,158 @@ class PxerHtmlParser{
  * @param {PxerPageRequest} task - 抓取后的页码任务对象
  * @return {PxerWorksRequest[]|false} - 解析得到的作品任务对象
  * */
-PxerHtmlParser.parsePage =function(task){
-    if(!(task instanceof PxerPageRequest)){
-        window['PXER_ERROR'] ='PxerHtmlParser.parsePage: task is not PxerPageRequest';
+PxerHtmlParser.parsePage = function (task) {
+    if (!(task instanceof PxerPageRequest)) {
+        window['PXER_ERROR'] = 'PxerHtmlParser.parsePage: task is not PxerPageRequest';
         return false;
     }
-    if(!task.url || !task.html){
-        window['PXER_ERROR'] ='PxerHtmlParser.parsePage: task illegal';
+    if (!task.url || !task.html) {
+        window['PXER_ERROR'] = 'PxerHtmlParser.parsePage: task illegal';
         return false;
     }
 
-    var URLData =parseURL(task.url);
-    var dom =PxerHtmlParser.HTMLParser(task.html);
+    const parseList = function (elt) {
+        return JSON.parse(elt.getAttribute('data-items'))
+            .filter(i => !i.isAdContainer) // skip AD
+        ;
+    };
 
-    // old method
-    var taskList =[];
-    
-    var searchResult =dom.body.querySelector("input#js-mount-point-search-result-list");
-    var elts =null;
-    if (searchResult) {
-        var searchData = JSON.parse(searchResult.getAttribute('data-items'));
-        for (var searchItem of searchData) {
-            var task =new PxerWorksRequest({
-                html    :{},
-                type    :searchItem.illustType==2?'ugoira'
-                        :searchItem.illustType==1?'manga'
-                        :'illust'
-                        ,
-                isMultiple  :searchItem.pageCount>1,
-                id  :searchItem.illustId
-            });
-            task.url =PxerHtmlParser.getUrlList(task);
-            
-            taskList.push(task);
-        };
-    } else {
-        elts =dom.body.querySelectorAll('a.work._work');
-    
-        for(let elt of elts){
-            var task =new PxerWorksRequest({
-                html        :{},
-                type        :elt.matches('.ugoku-illust')?'ugoira'
-                            :elt.matches(".manga")?'manga'
-                            :"illust"
-                            ,
-                isMultiple  :elt.matches(".multiple"),
-                id          :elt.getAttribute('href').match(/illust_id=(\d+)/)[1]
-           });
-    
-           task.url =PxerHtmlParser.getUrlList(task);
-    
-           taskList.push(task);
-        };
-    }
+    var taskList = [];
+    switch (task.type) {
+        case "userprofile_manga":
+        case "userprofile_illust":
+        case "userprofile_all":
+            var response = JSON.parse(task.html).body
+            if (task.type!=="userprofile_illust") {
+                for (let elt in response.manga) {
+                    let tsk = new PxerWorksRequest({
+                        html: {},
+                        type: null,
+                        isMultiple: null,
+                        id: elt,
+                    })
+                    tsk.url = PxerHtmlParser.getUrlList(tsk)
+                    taskList.push(tsk)
+                }
+            }
 
-    if ( (elts !== null && elts.length === 0) && !searchResult) {
-        window['PXER_ERROR'] ='PxerHtmlParser.parsePage: result empty';
+            if (task.type!=="userprofile_manga") {
+                for (let elt in response.illusts) {
+                    var tsk = new PxerWorksRequest({
+                        html: {},
+                        type: null,
+                        isMultiple: null,
+                        id: elt,
+                    })
+                    tsk.url = PxerHtmlParser.getUrlList(tsk)
+                    taskList.push(tsk)
+                }
+            }
+            break;
+
+        case "bookmark_works":
+            var response = JSON.parse(task.html).body
+            for (let worki in response.works) {
+                let work = response.works[worki];
+                let tsk = new PxerWorksRequest({
+                    html: {},
+                    type: this.parseIllustType(work.illustType),
+                    isMultiple: work.pageCount>1,
+                    id: work.id,
+                })
+                tsk.url = PxerHtmlParser.getUrlList(tsk)
+                taskList.push(tsk)
+            }
+            break;
+        case "member_works":
+            var dom = PxerHtmlParser.HTMLParser(task.html);
+            var elts = dom.body.querySelectorAll('a.work._work');
+            for (let elt of elts) {
+                var task = new PxerWorksRequest({
+                    html: {},
+                    type: function(elt) {
+                        switch (true) {
+                            case elt.matches('.ugoku-illust'): return "ugoira";
+                            case elt.matches('.manga'): return "manga";
+                            default: return "illust";
+                        }
+                    }(elt),
+                    isMultiple: elt.matches(".multiple"),
+                    id: elt.getAttribute('href').match(/illust_id=(\d+)/)[1]
+                });
+
+                task.url = PxerHtmlParser.getUrlList(task);
+
+                taskList.push(task);
+            };
+            break;
+        case "rank":
+            var data = JSON.parse(task.html);
+            for (var task of data['contents']) {
+
+                var task = new PxerWorksRequest({
+                    html: {},
+                    type: this.parseIllustType(task['illust_type']),
+                    isMultiple: task['illust_page_count'] > 1,
+                    id: task['illust_id'].toString(),
+                });
+                task.url = PxerHtmlParser.getUrlList(task);
+
+                taskList.push(task);
+            };
+            break;
+        case "discovery":
+            var data =JSON.parse(task.html);
+            for (var id of data.recommendations) {
+                var task = new PxerWorksRequest({
+                    html: {},
+                    type: null,
+                    isMultiple: null,
+                    id  : id.toString(),
+                });
+                task.url = PxerHtmlParser.getUrlList(task);
+                
+                taskList.push(task);
+            };
+            break;
+        case "search":
+            var dom = PxerHtmlParser.HTMLParser(task.html);
+            var searchData = parseList(dom.body.querySelector("input#js-mount-point-search-result-list"));
+            for (var searchItem of searchData) {
+                var task = new PxerWorksRequest({
+                    html: {},
+                    type: this.parseIllustType(searchItem.illustType),
+                    isMultiple: searchItem.pageCount > 1,
+                    id: searchItem.illustId
+                });
+                task.url = PxerHtmlParser.getUrlList(task);
+                taskList.push(task);
+            };
+            break;
+        case "bookmark_new":
+            var dom = PxerHtmlParser.HTMLParser(task.html);
+            var data = parseList(dom.body.querySelector("div#js-mount-point-latest-following"));
+            for (var task of data) {
+                
+                var task = new PxerWorksRequest({
+                    html      : {},
+                    type      : this.parseIllustType(task.illustType),
+                    isMultiple: task.pageCount > 1,
+                    id        : task.illustId.toString(),
+                });
+                task.url = PxerHtmlParser.getUrlList(task);
+
+                taskList.push(task);
+            };
+            break;
+        default:
+            throw new Error(`Unknown PageWorks type ${task.type}`);
+    };
+    
+    if (taskList.length<1) {
+        window['PXER_ERROR'] = 'PxerHtmlParser.parsePage: result empty';
         return false;
-    }
+    };
 
     return taskList;
 
@@ -85,36 +179,23 @@ PxerHtmlParser.parseWorks =function(task){
         window['PXER_ERROR'] ='PxerHtmlParser.parseWorks: task is not PxerWorksRequest';
         return false;
     }
-    if(!task.url.every(item=>task.html[item]) || !task.type){
-        window['PXER_ERROR'] ='PxerHtmlParser.parsePage: task illegal';
+    if(!task.url.every(item=>task.html[item])){
+        window['PXER_ERROR'] ='PxerHtmlParser.parseWorks: task illegal';
         return false;
     }
-
-    var pw;
-    if(task.type ==='ugoira'){
-        pw =new PxerUgoiraWorks();
-    }else if(task.isMultiple){
-        pw =new PxerMultipleWorks();
-    }else{
-        pw =new PxerWorks();
-    };
 
     for(let url in task.html){
         let data ={
             dom :PxerHtmlParser.HTMLParser(task.html[url]),
-            url,pw,task,
+            task: task,
         };
         try{
             switch (true){
                 case url.indexOf('mode=medium')!==-1:
-                    PxerHtmlParser.parseMediumHtml(data);
-                    break;
-                case url.indexOf('mode=manga')!==-1:
-                    PxerHtmlParser.parseMangaHtml(data);
+                    var pw=PxerHtmlParser.parseMediumHtml(data);
                     break;
                 default:
-                    return false;
-                    window['PXER_ERROR'] =`PxerHtmlParser.parsePage: count not parse task url "${url}"`;
+                    throw new Error(`PxerHtmlParser.parsePage: count not parse task url "${url}"`);
             };
         }catch(e){
             window['PXER_ERROR'] =`${task.id}:${e.message}`;
@@ -122,7 +203,6 @@ PxerHtmlParser.parseWorks =function(task){
             return false;
         }
     };
-
     return pw;
 
 };
@@ -139,21 +219,23 @@ PxerHtmlParser.getUrlList =function(task){
 
     };
 
-PxerHtmlParser.parseMangaHtml =function({task,dom,url,pw}){
-    pw.multiple =+(
-        dom.body.querySelector('img[data-src]')
-    ).innerHTML;
-};
-PxerHtmlParser.parseMediumHtml =function({task,dom,url,pw}){
-    pw.id           =task.id;
-    pw.type         =task.type;
-    
+
+PxerHtmlParser.parseMediumHtml =function({task,dom}){
     var illustData = dom.head.innerHTML.match(this.REGEXP['getInitData'])[0];
     illustData = this.getKeyFromStringObjectLiteral(illustData, "preload");
     illustData = this.getKeyFromStringObjectLiteral(illustData, 'illust');
-    illustData = this.getKeyFromStringObjectLiteral(illustData, pw.id);
+    illustData = this.getKeyFromStringObjectLiteral(illustData, task.id);
     illustData = JSON.parse(illustData);
 
+    var pw;
+    switch (true) {
+        case illustData.illustType===2: pw = new PxerUgoiraWorks(); break;
+        case illustData.pageCount>1: pw = new PxerMultipleWorks(); break;
+        default: pw = new PxerWorks(); break;
+    }
+
+    pw.id = task.id;
+    pw.type = this.parseIllustType(illustData.illustType);
     pw.tagList = illustData.tags.tags.map(e=>e.tag);
     pw.viewCount = illustData.viewCount;
     pw.ratedCount = illustData.bookmarkCount;
@@ -172,7 +254,11 @@ PxerHtmlParser.parseMediumHtml =function({task,dom,url,pw}){
 
             pw.domain = URLObj.domain;
             pw.date   =src.match(PxerHtmlParser.REGEXP['getDate'])[1];
-            pw.frames =meta['body']['frames'];
+            pw.frames ={
+                framedef:meta['body']['frames'],
+                height:illustData.height,
+                width:illustData.width,
+            };
     } else {
             let src = illustData.urls.original;
             let URLObj = parseURL(src);
@@ -181,9 +267,23 @@ PxerHtmlParser.parseMediumHtml =function({task,dom,url,pw}){
             pw.date = src.match(PxerHtmlParser.REGEXP['getDate'])[1];
             pw.fileFormat =src.match(/\.(jpg|gif|png)$/)[1];    
     };
-
+    return pw;
 };
 
+PxerHtmlParser.parseIllustType =function(type){
+    switch (type.toString()) {
+        case "0":
+        case "illust":
+            return "illust";
+        case "1":
+        case "manga":
+            return "manga";
+        case "2":
+        case "ugoira":
+            return "ugoira";
+    }
+    return null;
+}
 
 PxerHtmlParser.REGEXP ={
     'getDate':/img\/((?:\d+\/){5}\d+)/,
@@ -313,5 +413,5 @@ PxerHtmlParser.getKeyFromStringObjectLiteral =function(s, key) {
     for (var pair of resolvedpairs) {
         if (pair[0] ===key) return pair[1];
     }
-    throw new Error("Key not found.");
+    return false;
 }

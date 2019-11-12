@@ -20,7 +20,7 @@ class PxerRequest{
 class PxerPageRequest extends PxerRequest{
     constructor(...argn){
         super(...argn);
-        return denyNewAttr(this);
+        this.type = argn[0].type;
     }
 }
 /**
@@ -34,7 +34,6 @@ class PxerWorksRequest extends PxerRequest{
         this.type =type;//[manga|ugoira|illust]
         this.isMultiple =isMultiple;//[true|false]
         this.id =id;
-        return denyNewAttr(this);
     }
 }
 
@@ -49,7 +48,6 @@ class PxerFailInfo{
         this.url  =url;
         this.type =type;
         this.task =task;
-        return denyNewAttr(this);
     }
 }
 
@@ -82,8 +80,6 @@ class PxerWorks{
         this.ratedCount =ratedCount;
         /**作品的图片文件扩展名*/
         this.fileFormat =fileFormat;
-
-        if(strict)return denyNewAttr(this);
     }
 }
 /**
@@ -96,7 +92,6 @@ class PxerMultipleWorks extends PxerWorks{
         super(data,false);
         /**作品的图片张数*/
         this.multiple =data.multiple;
-        return denyNewAttr(this);
     }
 };
 /**
@@ -110,30 +105,5 @@ class PxerUgoiraWorks extends PxerWorks{
         this.fileFormat='zip';
         /**动图动画参数*/
         this.frames =data.frames;
-        return denyNewAttr(this);
     }
 };
-
-/**
- * 对对象进行代理，拒绝新key赋值并抛出错误
- * @param {Object} obj - 要代理的对象
- * @return {Proxy}
- * */
-function denyNewAttr(obj){
-    if(typeof Proxy==='undefined')return obj;
-    return new Proxy(obj ,{
-        get(obj ,prop){
-            if(!(prop in obj) && typeof prop !=='symbol' && !/^\_|to[A-Z]/.test(prop)){
-                console.warn(`attribute "${prop}" is not in ${obj.constructor.name}`)
-            }
-            return obj[prop];
-        },
-        set(obj ,prop ,value){
-            if(!(prop in obj)){
-                throw new Error(`Count not set attribute "${prop}" in ${obj.constructor.name}`);
-            };
-            obj[prop]=value;
-            return true;
-        },
-    });
-}

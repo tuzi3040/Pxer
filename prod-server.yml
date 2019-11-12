@@ -1,0 +1,8 @@
+apps:
+  - script     : 'server/index.js'
+    name       : 'pxer-server'
+    instances  : 1
+    args       : '-a 0.0.0.0 -p 80 -c yes --analytics'
+    watch      : false
+    merge_logs : true
+    output     : './server/logs/pxer-server.log'
